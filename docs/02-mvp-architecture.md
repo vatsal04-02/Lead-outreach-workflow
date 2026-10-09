@@ -120,7 +120,7 @@ The brief's stage list, plus **one addition: `Disqualified`**. Without it, prosp
 | Stage | Set by | Rule |
 |---|---|---|
 | New Lead | WF01 | Imported, deduplicated, not suppressed |
-| Researched | WF02 | Website fetched and analysed |
+| Researched | WF02 | Website fetched and analysed, but Companies House couldn't be matched automatically, so a human must check it. (Fetch and AI failures leave the stage unchanged and set `last_error`.) |
 | Qualified | WF02 | `total_score ≥ MIN_QUALIFY_SCORE` and all hard gates pass |
 | **Disqualified** *(new)* | WF02 / human | A hard gate failed or the score is below the threshold. Reason recorded. |
 | Draft Ready | WF03 | Draft generated **and** passed automated checks |
@@ -170,7 +170,7 @@ A problem-evidence score above 1 without a quote and URL is **automatically capp
 | WF05 | Replies & Bounces | 6 | Schedule, every 15 minutes | Matches Gmail `threadId` against `Send_Log`. **Opt-out detection is keyword-based (no AI)** and suppresses immediately. Bounces from `mailer-daemon` are suppressed. Other replies are marked `Replied` for a human to read. |
 | WF06 | Daily Metrics | 6 | Schedule, daily | Counts by stage and writes a row to `Metrics`. |
 
-Exported workflow JSON goes in `workflows/` in this repo. The exports contain credential **names** only, never secrets.
+Exported workflow JSON goes in `workflows/` in this repo. The exports contain credential **types** only, never secrets. **All six workflows are implemented.** Their inputs, outputs, failure handling, idempotency and tests are documented in `08-workflows.md`.
 
 ---
 
@@ -186,6 +186,15 @@ Exported workflow JSON goes in `workflows/` in this repo. The exports contain cr
 8. Send through the Gmail node (OAuth2).
 9. On success: write `Sent`, the message and thread IDs, `sent_at`, and `stage = Contacted`, then append to `Send_Log`. On failure: write `Failed` and the error, and **don't auto-retry**. A human decides.
 
+**Implemented additions to this sequence** (see `00-implementation-checklist.md` §5):
+- The daily cap also counts test sends and Leads rows, not only Send_Log.
+- Two failed sends in a day pause sending until the next day.
+- A lead left in `Sending` stops all sending until a human resolves it.
+- The draft is re-checked at send time, in case it was edited after approval.
+- After locking, the row is re-read to confirm this run holds the lock.
+- In test mode the lead gets `send_status = TestSent` (never picked again) and keeps stage `Approved`.
+- An optional `LIVE_RECIPIENT_ALLOWLIST` restricts live sends during the Phase 7 test.
+
 **Stop methods, from fastest to strongest:**
 1. Set `SENDING_ENABLED` to `FALSE` in the Sheet.
 2. Deactivate WF04 in n8n.
@@ -196,7 +205,9 @@ Exported workflow JSON goes in `workflows/` in this repo. The exports contain cr
 
 ## 8. Metrics (focused on outcomes, not volume)
 
-Daily and cumulative: new leads, qualified, qualification rate, drafts approved / rejected, **emails sent**, bounces (with rate), unsubscribes, **replies**, **positive replies**, **meetings booked**, **proposals sent**, **clients won**, and won value. The headline numbers are **positive replies, meetings, and clients**.
+New leads, qualified, qualification rate, drafts approved / rejected, **emails sent**, bounces (with rate), unsubscribes, **replies**, **positive replies**, **meetings booked**, **proposals sent**, **clients won**, and won value. The headline numbers are **positive replies, meetings, and clients**.
+
+As implemented, WF06 writes one row per day of **cumulative totals**; the daily change is the difference between two rows. Exact definitions are in `08-workflows.md` (WF06). `won_value` stays blank until Leads has a deal-value column.
 
 ---
 

@@ -4,57 +4,71 @@ FlowHQ's internal business-development system. It finds relevant businesses, exp
 
 **Success metric:** qualified conversations and paying clients, **not** email volume.
 
-## Current status
+## Status
 
-| Phase | Scope | Status |
+**All planned workflows are implemented and pass automated tests, with Google services stubbed. None has been verified against FlowHQ's real Google Sheet, Gmail, Companies House or Gemini.** The system is **not production-ready**: complete `docs/09-setup-and-go-live.md` first. Sending stays off (`SENDING_ENABLED = FALSE`, `TEST_MODE = TRUE`) until you sign the go-live checklist.
+
+| Phase | Scope | Implemented | Automated tests | Real services |
+|---|---|---|---|---|
+| 1 | Niche, ICP, offer, architecture | Docs | n/a | Decisions open |
+| 1b | Niche smoke test (20 agencies) | Template + procedure | n/a | **0/20 verified** |
+| 2 | Sheet, WF00, WF01 | ✅ | ✅ | ❌ |
+| 3 | WF02 research and qualification | ✅ | ✅ | ❌ |
+| 4 | WF03 drafts | ✅ | ✅ | ❌ |
+| 5 | Human approval + WF04 sending | ✅ | ✅ | ❌ (Gmail OAuth broken) |
+| 6 | WF05 replies/opt-outs/bounces, WF06 metrics | ✅ | ✅ | ❌ |
+| 7 | Controlled end-to-end test | ✅ stubbed chain + live procedure | ✅ | ❌ |
+
+Automated results:
+- `npm test`: **137/137**.
+- n8n engine harness: **22/22 on n8n 2.41.6 and 2.42.6** (imports every workflow and chains WF01→WF06).
+
+Details are in [`docs/00-implementation-checklist.md`](docs/00-implementation-checklist.md).
+
+## Workflows
+
+| File | Trigger | What it does |
 |---|---|---|
-| 1 | Target niche, ICP, offer, MVP architecture | Proposed. **FlowHQ sign-off still pending** (`docs/01` §9). |
-| 1b | Niche smoke test (20 verified agencies) | **Not run.** Template and 22 unverified candidate names ready (`docs/05`). |
-| 2 | Google Sheets database + manual lead import (WF00, WF01) | **Built and tested offline. Not yet run against FlowHQ's Google Sheet** (`docs/07` §7). |
-| 3 | Research & qualification (WF02) | Not started |
-| 4 | Personalised draft generation (WF03) | Not started |
-| 5 | Manual approval + Gmail sending (WF04) | Not started |
-| 6 | Reply/bounce tracking, suppression, reporting (WF05, WF06) | Not started |
-| 7 | End-to-end test with controlled records and recipients | Not started |
+| `workflows/WF00-error-handler.json` | Error | Errors tab + alert email |
+| `workflows/WF01-import-dedupe.json` | Manual | Import → validated, deduplicated `New Lead` rows |
+| `workflows/WF02-research-qualify.json` | Manual | Website + Companies House + Gemini → Qualified / Disqualified / Researched |
+| `workflows/WF03-draft-generation.json` | Manual | Template draft + one checked AI sentence → `Draft Ready` |
+| *(human)* | — | Approve in the Sheet |
+| `workflows/WF04-approved-sender.json` | Every 10 min | At most one approved email per run, behind every safety gate |
+| `workflows/WF05-replies-bounces.json` | Every 15 min | Opt-outs and bounces → Suppression; replies → Replied |
+| `workflows/WF06-daily-metrics.json` | Daily | Metrics snapshot |
+| `workflows/WF00-selftest-trigger.json` | Every minute | Temporary WF00 test (delete after use) |
 
-"Tested offline" means:
-- 52 unit and schema tests pass (`npm test`).
-- The workflows import into n8n 2.42.6 and run correctly in its engine with Google Sheets and Gmail stubbed (`scripts/n8n-engine-test.js`).
-
-A phase is marked done only after its validation steps pass on FlowHQ's own n8n and Google account.
+The full reference (inputs, outputs, failure handling, idempotency, tests) is in [`docs/08-workflows.md`](docs/08-workflows.md).
 
 ## Documents
 
-- [`docs/01-strategy-icp-offer.md`](docs/01-strategy-icp-offer.md): assumptions, niche, ICP, offer, decisions needed
-- [`docs/02-mvp-architecture.md`](docs/02-mvp-architecture.md): data flow, Sheet schema, stages, scoring, workflows, safety
-- [`docs/03-compliance-guardrails.md`](docs/03-compliance-guardrails.md): country rules and enforced rules
-- [`docs/04-repo-review.md`](docs/04-repo-review.md): what's implemented vs documented, and inconsistencies found
-- [`docs/05-niche-smoke-test.md`](docs/05-niche-smoke-test.md): smoke-test status and manual research process
-- [`docs/06-offer-review.md`](docs/06-offer-review.md): pilot feasibility, risks, claims needing evidence, pricing validation
-- [`docs/07-phase-2-setup.md`](docs/07-phase-2-setup.md): **step-by-step setup and validation tests for Phase 2**
+- [`00-implementation-checklist.md`](docs/00-implementation-checklist.md): status, audit, decisions D1–D11, interpretations
+- [`01-strategy-icp-offer.md`](docs/01-strategy-icp-offer.md), [`02-mvp-architecture.md`](docs/02-mvp-architecture.md), [`03-compliance-guardrails.md`](docs/03-compliance-guardrails.md): strategy, architecture, compliance
+- [`05-niche-smoke-test.md`](docs/05-niche-smoke-test.md), [`06-offer-review.md`](docs/06-offer-review.md): research procedure and offer review
+- [`07-phase-2-setup.md`](docs/07-phase-2-setup.md): Phase 2 tests T1–T7
+- [`08-workflows.md`](docs/08-workflows.md): workflow inventory and dependency map
+- [`09-setup-and-go-live.md`](docs/09-setup-and-go-live.md): **live setup for n8n 2.41.6, validation, Phase 7 E2E, go-live checklist, rollback, limitations**
+- [`10-gmail-oauth-troubleshooting.md`](docs/10-gmail-oauth-troubleshooting.md): Gmail OAuth fixes
 
 ## Repository layout
 
 ```
-docs/        Strategy, architecture, compliance, reviews, setup guides
-research/    Smoke-test template and unverified candidate list
-src/         Sheet schema and workflow logic (single source of truth)
-sheets/      Generated tab templates (CSV) and Phase 2 test fixtures
-workflows/   Generated n8n workflow JSON (no credentials, no sheet IDs)
-scripts/     build.js (generates sheets/ and workflows/), n8n-engine-test.js
-tests/       Unit, schema and workflow-structure tests (node --test)
+docs/        Strategy, architecture, compliance, setup, go-live
+research/    Smoke-test template and UNVERIFIED candidate list
+src/         Schema + workflow logic (single source of truth); src/lib = shared modules
+sheets/      Generated tab templates (CSV) and synthetic test fixtures
+workflows/   Generated n8n workflows (no credentials, no sheet IDs)
+scripts/     build.js, n8n-engine-test.js, secret-scan.js
+tests/       Unit, schema, workflow-structure, E2E-logic and secret-scan tests
 ```
 
-Edit `src/`, then run `npm run build` and `npm test`. Never hand-edit `sheets/` or `workflows/`; `npm test` fails if they drift from `src/`.
+Edit `src/`, then run `npm run build` and `npm test`. Never hand-edit `sheets/` or `workflows/`: `npm test` fails if they drift from `src/`.
 
-## Stack (₹0)
+## Stack (₹0 apart from a possible sending domain)
 
-- n8n Community Edition (local, Docker on Windows/WSL2)
-- Google Sheets (source of truth)
-- Gmail via OAuth2 (alerts now; sending and reply tracking later)
-- Companies House API (free; UK company verification, Phase 3)
-- A free-tier LLM (Phase 3+)
+n8n Community Edition (local, Docker on WSL2), Google Sheets, Gmail OAuth2, the Companies House API (free), and the Gemini API free tier. No paid tools, scraping services or lead databases.
 
 ## Important limitation
 
-**Workflows only run while the laptop is on, awake, and the n8n container is running.** Missed schedules are not caught up. This is acceptable for internal outreach. It's **not** acceptable for client production automations, which must run on client-owned hosting.
+**Workflows only run while the laptop is on, awake, and the n8n container is running.** Missed schedules aren't caught up, and opt-outs are only processed while WF05 runs. Client production automations must never run on this laptop.

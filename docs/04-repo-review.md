@@ -1,5 +1,7 @@
 # Repository review before Phase 2 (2026-10-09)
 
+> Historical record from the Phase 2 round. The current status, audit and decisions are in `00-implementation-checklist.md`.
+
 ## 1. State before this change
 
 - Branch `claude/kind-johnson-ik3vzk` held one commit (`6126b08`) and four files: the README and the three Phase 1 docs. The working tree was clean, and there was no other branch or unrelated work to protect.

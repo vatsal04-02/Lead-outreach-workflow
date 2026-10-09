@@ -1,6 +1,6 @@
 # Niche smoke test: UK independent estate and letting agencies
 
-**Status: NOT RUN. Zero of 20 agencies verified.** The smoke test has **not** passed or failed. No prospect in this repository has verified company status, a verified email address, or a verified observation.
+**Status: NOT RUN. Zero of 20 agencies verified.** Re-checked on 2026-10-09: page fetching is still blocked in the build environment (`ENOTFOUND` for Companies House), so all 22 candidates remain `UNVERIFIED`. The smoke test has **not** passed or failed. No prospect in this repository has verified company status, a verified email address, or a verified observation.
 
 ## 1. Why I couldn't verify prospects
 
@@ -77,3 +77,8 @@ Copy only `PASS` and `PASS+SIGNAL` rows into the Sheet's **Import** tab:
 | Companies House number + observation quote | `notes` |
 
 The Companies House fields (`company_number`, `company_status`, `legal_entity_type`) are filled by WF02 (Phase 3) via the official API, per the architecture. For now, keep them in the research sheet.
+
+## 7. Using the pipeline once candidates are verified
+
+After you've found an agency's own website and **published** email by hand (steps 1 and 4 above), you can import it with WF01. WF02 then repeats the Companies House check through the official API and captures quoted evidence automatically. It never invents a company status, an email or a quote: any quote the AI returns is discarded unless it appears verbatim on the cited page. That makes WF02 a second check on your manual research, **not** a replacement for it. Evidence of *buying intent* is never inferred by any workflow.
+
