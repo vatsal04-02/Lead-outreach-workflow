@@ -9,7 +9,7 @@
 
 // ---- IMPORTS (stripped when embedded in n8n) ----
 const {
-  FREE_MAIL_DOMAINS, text, isTrue, parseHost, registrableDomain, normaliseEmail, isValidEmail,
+  FREE_MAIL_DOMAINS, text, isTrue, parseHost, registrableDomain, businessKey, normaliseEmail, isValidEmail,
   emailDomain, normaliseDate, parseSettings, resolveActiveNiche, buildSuppressionIndex, suppressionReason,
 } = require('./lib/common');
 // ---- END IMPORTS ----
@@ -88,7 +88,7 @@ function warningsFor({ leadId, email, sourceHost, row }) {
   } else if (mailDomain !== leadId) {
     warnings.push(`contact_email domain (${mailDomain}) differs from website domain (${leadId})`);
   }
-  if (registrableDomain(sourceHost) !== leadId) {
+  if (businessKey(text(row.email_source_url)) !== leadId && registrableDomain(sourceHost) !== leadId) {
     warnings.push('email_source_url is not on the agency website; the ICP requires the email to be published on its own site');
   }
   if (!text(row.city)) warnings.push('city is blank');
@@ -145,7 +145,8 @@ function processImport({ settingsRows, nichesRows, leadsRows, suppressionRows, i
       continue;
     }
 
-    const leadId = registrableDomain(v.websiteHost);
+    // Registrable domain, except on shared hosting platforms (see businessKey).
+    const leadId = businessKey(websiteUrl(row.website));
 
     const suppressed = suppressionReason(idx.suppression, v.email, leadId);
     if (suppressed) {
@@ -185,6 +186,8 @@ function processImport({ settingsRows, nichesRows, leadsRows, suppressionRows, i
       discovery_source_url: text(row.discovery_source_url),
       discovered_at: v.discoveredAt || timestamp,
       stage: 'New Lead',
+      discovery_status: 'IMPORTED',
+      research_status: 'PENDING',
       notes: text(row.notes),
       last_updated: timestamp,
     });

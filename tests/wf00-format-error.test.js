@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { formatError, MAX_MESSAGE_LENGTH } = require('../src/wf00-format-error');
+const { formatError, formatAlertFailure, MAX_MESSAGE_LENGTH } = require('../src/wf00-format-error');
 const { TABS } = require('../src/schema');
 
 const NOW = '2026-10-09T10:00:00.000Z';
@@ -53,3 +53,16 @@ test('long messages are truncated and formula-like text is neutralised', () => {
   assert.ok(row.message.startsWith("'="));
   assert.equal(row.workflow, "'+evil");
 });
+
+test('a failed alert email becomes its own Errors row and never claims success', () => {
+  const original = formatError({ execution: { error: { message: 'boom lead_id=a.example' } }, workflow: { name: 'WF04 Approved Sender' } }, NOW).row;
+  for (const err of ['invalid_grant', { message: 'Token has been expired or revoked.' }]) {
+    const row = formatAlertFailure(original, err, NOW);
+    assert.deepEqual(Object.keys(row), TABS.Errors);
+    assert.equal(row.node, 'Email Alert');
+    assert.equal(row.lead_id, 'a.example');
+    assert.match(row.message, /^Alert email NOT sent \((invalid_grant|Token has been expired)/);
+    assert.match(row.message, /Original failure: WF04 Approved Sender/);
+  }
+});
+

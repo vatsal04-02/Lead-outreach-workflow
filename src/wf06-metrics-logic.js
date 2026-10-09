@@ -14,7 +14,7 @@ const QUALIFIED_OR_LATER = new Set([
   STAGE.QUALIFIED, STAGE.DRAFT_READY, STAGE.APPROVED, STAGE.CONTACTED, STAGE.REPLIED,
   STAGE.MEETING, STAGE.PROPOSAL, STAGE.WON, STAGE.LOST, STAGE.UNSUBSCRIBED,
 ]);
-const RESEARCHED_OR_LATER = new Set([...QUALIFIED_OR_LATER, STAGE.RESEARCHED, STAGE.DISQUALIFIED]);
+const RESEARCHED_OR_LATER = new Set([...QUALIFIED_OR_LATER, STAGE.RESEARCHED, STAGE.NEEDS_REVIEW, STAGE.DISQUALIFIED]);
 
 function ratio(n, d) {
   return d > 0 ? Math.round((n / d) * 1000) / 1000 : '';
@@ -52,6 +52,10 @@ function computeMetrics({ leadsRows, sendLogRows, suppressionRows, now, timeZone
     clients_won: count((l) => stage(l) === STAGE.WON),
     // The Leads tab has no deal-value column, so this stays blank until one is agreed.
     won_value: '',
+    discovered: count((l) => text(l.discovery_status) === 'DISCOVERED'),
+    researched: count((l) => ['RESEARCHED', 'NEEDS_REVIEW'].includes(text(l.research_status))),
+    needs_review: count((l) => stage(l) === STAGE.NEEDS_REVIEW),
+    send_failures: realRows(sendLogRows).filter((r) => text(r.status) === 'failed').length,
   };
 }
 

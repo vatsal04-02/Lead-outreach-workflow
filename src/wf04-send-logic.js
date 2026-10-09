@@ -139,6 +139,12 @@ function gateAndPick({ settingsRows, nichesRows, leadsRows, suppressionRows, sen
   // 2. Configuration (throws on anything invalid).
   const cfg = sendingConfig(settings, realRows(nichesRows));
 
+  // 2b. Live email needs a documented legal basis for this campaign's country
+  //     (docs/03). Test-mode sends only reach FlowHQ's own inbox.
+  if (!cfg.testMode && !isExactlyTrue(cfg.niche.row.outreach_basis_reviewed)) {
+    return skip(`live sending blocked: campaign "${cfg.niche.niche_id}" has outreach_basis_reviewed not set to TRUE (legal review for ${text(cfg.niche.row.country) || 'its country'} required)`);
+  }
+
   // 3. Allowed day and sending window, in the niche's time zone.
   const local = zonedParts(nowMs, cfg.tz);
   if (!cfg.days.includes(local.weekday)) return skip(`${local.weekday} is not in SEND_DAYS (${cfg.tz})`);

@@ -65,5 +65,19 @@ function formatError(data, now) {
   return { row, emailSubject, emailBody };
 }
 
+// A failed alert email is itself recorded, so an alert is never assumed sent.
+function formatAlertFailure(original, alertError, now) {
+  const o = original || {};
+  const e = alertError || {};
+  const reason = typeof e === 'string' ? e : errText(e.message) || errText(e.description) || JSON.stringify(e);
+  return {
+    timestamp: errText(now) || new Date().toISOString(),
+    workflow: 'WF00 Error Handler',
+    node: 'Email Alert',
+    lead_id: sheetSafe(o.lead_id),
+    message: sheetSafe(`Alert email NOT sent (${reason.slice(0, 300)}). Original failure: ${errText(o.workflow)} at "${errText(o.node)}".`).slice(0, MAX_MESSAGE_LENGTH),
+  };
+}
+
 // ---- EXPORT (stripped when embedded in n8n) ----
-module.exports = { formatError, extractLeadId, sheetSafe, MAX_MESSAGE_LENGTH };
+module.exports = { formatError, formatAlertFailure, extractLeadId, sheetSafe, MAX_MESSAGE_LENGTH };

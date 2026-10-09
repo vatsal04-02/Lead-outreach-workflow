@@ -25,7 +25,8 @@ function approved(overrides = {}) {
 }
 
 function run({ settings = {}, leads = [approved()], suppression = [], sendLog = [], niches, now = NOW } = {}) {
-  return W4.gateAndPick({ settingsRows: settingsRows({ ...LIVE, ...settings }), nichesRows: niches || nichesRows(), leadsRows: leads, suppressionRows: suppression, sendLogRows: sendLog, now });
+  // The campaign's legal basis is marked reviewed here; the gate itself is tested below.
+  return W4.gateAndPick({ settingsRows: settingsRows({ ...LIVE, ...settings }), nichesRows: niches || nichesRows({ outreach_basis_reviewed: 'TRUE' }), leadsRows: leads, suppressionRows: suppression, sendLogRows: sendLog, now });
 }
 
 // ---------- kill switch and modes ----------
@@ -206,4 +207,14 @@ test('results write only real Leads and Send_Log columns', () => {
   assert.equal(fail.logRow.status, 'failed');
   assert.match(fail.alert, /lead_id=agency-one\.example/);
   assert.match(fail.leadUpdate.last_error, /invalid_grant/);
+});
+
+test('live sending needs the campaign legal basis reviewed; test mode does not', () => {
+  for (const v of ['FALSE', '', 'yes', 'true']) {
+    const r = run({ settings: { TEST_MODE: 'FALSE' }, niches: nichesRows({ outreach_basis_reviewed: v }) });
+    assert.equal(r.action, 'skip', v);
+    assert.match(r.reason, /outreach_basis_reviewed not set to TRUE/);
+  }
+  assert.equal(run({ niches: nichesRows({ outreach_basis_reviewed: 'FALSE' }) }).action, 'send'); // test mode
+  assert.equal(run({ settings: { TEST_MODE: 'FALSE' }, niches: nichesRows({ outreach_basis_reviewed: 'TRUE' }) }).action, 'send');
 });

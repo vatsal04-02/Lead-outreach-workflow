@@ -17,3 +17,6 @@ PRIVACY_URL,,Shown in the email footer.
 WEBSITE_URL,,Shown in the email footer.
 BUSINESS_LEGAL_NAME,,"FlowHQ's registered legal name, required in every email footer (compliance rule 4)."
 LIVE_RECIPIENT_ALLOWLIST,,"Optional. When set, live sends go ONLY to these comma-separated addresses (Phase 7 testing). Clear it to go live."
+DISCOVERY_ENABLED,FALSE,WF02 discovers new businesses through OpenStreetMap only when exactly TRUE.
+DISCOVERY_QUERIES_PER_RUN,2,"Searches (region x industry) per WF02 run, 1-10."
+DISCOVERY_REFRESH_DAYS,30,A completed search is repeated only after this many days.

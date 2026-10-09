@@ -9,7 +9,6 @@ const assert = require('node:assert/strict');
 const { TABS } = require('../src/schema');
 const W1 = require('../src/wf01-import-logic');
 const W2 = require('../src/wf02-research-logic');
-const R = require('../src/lib/registries');
 const W3 = require('../src/wf03-draft-logic');
 const W4 = require('../src/wf04-send-logic');
 const W5 = require('../src/wf05-replies-logic');
@@ -35,7 +34,7 @@ function sheet() {
 test('one synthetic agency travels from import to unsubscribe, with every safety gate respected', () => {
   const s = sheet();
   let settings = settingsRows({ SENDING_ENABLED: 'FALSE', TEST_RECIPIENT: 'inbox@flowhq.example' });
-  const niches = nichesRows();
+  const niches = nichesRows({ outreach_basis_reviewed: 'TRUE' });
 
   // WF01
   const imp = W1.processImport({
@@ -48,16 +47,16 @@ test('one synthetic agency travels from import to unsubscribe, with every safety
   // WF02
   const header = [Object.fromEntries(TABS.Leads.map((c) => [c, c]))];
   const batch = W2.selectResearchBatch({ settingsRows: settings, nichesRows: niches, leadsRows: s.rows('Leads'), suppressionRows: [], leadsHeaderRows: header, now: NOW });
-  const item = batch.researchItems[0];
-  const html = '<p>We aim to respond to all enquiries within 24 hours.</p><p>Kappa Lettings Ltd, company no. 09990009</p>';
-  const assembled = W2.assembleResearch(item, { data: html }, []);
-  assert.equal(assembled.ch_request_url, 'https://api.company-information.service.gov.uk/company/09990009');
-  const registry = R.evaluateRegistry(assembled.registry_plan, { company_number: '09990009', company_status: 'active', type: 'ltd', company_name: 'KAPPA LETTINGS LIMITED' }, NOW);
-  assert.ok(W2.buildAiRequest(assembled, registry, 'gemini-2.5-flash').request_url);
-  const ai = gem({ fit_score: 3, problem_score: 2, contact_score: 1, evidence: [{ quote: 'We aim to respond to all enquiries within 24 hours.', url: 'https://kappa.example', signal: '24h' }], qualification_reasoning: 'Fits.', opportunity_hypothesis: 'Auto-acknowledge.' });
-  s.update([W2.scoreAndGate({ assembled, registry, aiResponse: ai, now: NOW })]);
-  assert.equal(s.lead('kappa.example').stage, 'Qualified');
-  assert.equal(s.lead('kappa.example').registry_status, 'VERIFIED');
+  const gated = W2.robotsGate(batch.researchItems[0], { data: 'User-agent: *\nDisallow: /admin' });
+  const html = '<p>Kappa Lettings Ltd, Reading.</p><p>We aim to respond to all enquiries within 24 hours.</p><p>Viewings are booked by phone only.</p>';
+  const assembled = W2.assembleResearch(gated, { data: html }, []);
+  assert.ok(W2.buildAiRequest(assembled, 'gemini-2.5-flash').request_url);
+  const opp = (excerpt, type, confidence) => ({ opportunity_type: type, observed_excerpt: excerpt, source_url: 'https://kappa.example', observed_fact: 'f', inferred_opportunity: 'i', why_relevant: 'w', confidence, uncertainty: 'u' });
+  const ai = gem({ relevance_score: 3, contact_score: 1, qualification_reasoning: 'Fits.', opportunities: [opp('We aim to respond to all enquiries within 24 hours.', 'missed_enquiry_followup', 'high'), opp('Viewings are booked by phone only.', 'appointment_booking', 'medium')] });
+  s.update([W2.scoreAndGate({ assembled, aiResponse: ai, suppressionRows: [], now: NOW })]);
+  assert.equal(s.lead('kappa.example').stage, 'Qualified', s.lead('kappa.example').qualification_reasoning);
+  assert.equal(s.lead('kappa.example').research_status, 'RESEARCHED');
+  assert.equal(s.lead('kappa.example').discovery_status, 'IMPORTED');
 
   // WF03 (AI unavailable → evidence-quoting template sentence)
   const drafts = W3.selectDrafts({ settingsRows: settings, nichesRows: niches, leadsRows: s.rows('Leads'), suppressionRows: [], model: 'm', now: NOW });

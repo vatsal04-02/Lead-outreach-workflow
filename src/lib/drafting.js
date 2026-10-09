@@ -29,14 +29,45 @@ const BANNED_PHRASES = [
 
 // Templates are versioned; a draft records the template_id it was built from.
 // Static text here is FlowHQ-approved wording, not AI output.
+// Fixed, FlowHQ-approved wording for each automation opportunity type that WF02
+// can propose. It describes what the automation does, never a result.
+const OPPORTUNITY_PHRASES = {
+  enquiry_capture: 'captures every website and email enquiry automatically and logs it in one place',
+  lead_routing: 'passes each new enquiry to the right person automatically',
+  crm_sync: 'keeps your CRM or spreadsheets updated automatically, so details are not re-typed',
+  appointment_booking: 'lets customers request appointments online and sends them a confirmation automatically',
+  reminders: 'sends appointment or payment reminders automatically',
+  missed_enquiry_followup: 'follows up enquiries that have not had a reply yet, with a nudge to your team',
+  faq_automation: 'answers common customer questions automatically and passes anything unusual to your team',
+  form_processing: 'turns form submissions into structured records without manual data entry',
+  email_triage: 'sorts incoming emails and notifies the right person automatically',
+  reporting: 'produces routine reports automatically from the tools you already use',
+  onboarding: 'handles the routine steps of onboarding a new customer automatically',
+  internal_workflow: 'connects the tools you already use so routine admin steps happen automatically',
+};
+
 const TEMPLATES = {
   'uk-estate-letting-v1': {
+    language: 'en',
     subject: (ctx) => `Enquiry follow-up at ${ctx.agency}`,
     fallbackObservation: (ctx) => (ctx.evidence[0]
       ? `I was looking at ${ctx.agency}'s website and noticed this: "${clip(ctx.evidence[0].quote, 160)}"`
       : ''),
-    service: 'FlowHQ builds small automations for estate and letting agents. For example, every portal or website enquiry can get a personalised acknowledgement from your own inbox within minutes, be logged, and be passed to the right negotiator, with a nudge if nobody has picked it up.',
+    service: () => 'FlowHQ builds small automations for estate and letting agents. For example, every portal or website enquiry can get a personalised acknowledgement from your own inbox within minutes, be logged, and be passed to the right negotiator, with a nudge if nobody has picked it up.',
     question: (ctx) => `Is out-of-hours or busy-day enquiry follow-up something you've already got covered? If not, would a ${ctx.cta} for ${ctx.agency} be useful?`,
+    requiresOpportunity: false,
+  },
+  // Industry- and country-independent: built around the lead's top verified
+  // opportunity from WF02 (Leads.opportunities).
+  'general-automation-v1': {
+    language: 'en',
+    subject: (ctx) => `A small automation idea for ${ctx.agency}`,
+    fallbackObservation: (ctx) => (ctx.opportunity
+      ? `I was looking at ${ctx.agency}'s website and noticed this: "${clip(ctx.opportunity.observed_excerpt, 160)}"`
+      : ''),
+    service: (ctx) => `FlowHQ builds small, practical automations. One idea that might fit is a workflow that ${OPPORTUNITY_PHRASES[ctx.opportunity && ctx.opportunity.opportunity_type] || OPPORTUNITY_PHRASES.internal_workflow}.`,
+    question: (ctx) => `Is that something you already have covered? If not, would a ${ctx.cta} for ${ctx.agency} be useful?`,
+    requiresOpportunity: true,
   },
 };
 
@@ -72,6 +103,17 @@ function signatureAndFooter(settings, lead) {
   ].join('\n');
 }
 
+// The first verified opportunity WF02 stored, or null. Malformed JSON is ignored.
+function topOpportunity(lead) {
+  try {
+    const list = JSON.parse(text(lead.opportunities) || '[]');
+    const o = Array.isArray(list) ? list.find((x) => x && text(x.observed_excerpt) && text(x.source_url)) : null;
+    return o || null;
+  } catch (e) {
+    return null;
+  }
+}
+
 function templateContext(lead, niche) {
   return {
     agency: agencyName(lead.company_name),
@@ -79,6 +121,7 @@ function templateContext(lead, niche) {
     cta: text(niche && niche.cta).replace(/^\w/, (c) => c.toLowerCase()) || 'short call',
     evidence: parseEvidence(lead.evidence),
     evidenceText: text(lead.evidence),
+    opportunity: topOpportunity(lead),
   };
 }
 
@@ -89,7 +132,7 @@ function composeEmail({ templateId, lead, niche, settings, observation, subject 
   const main = [
     `Hi ${ctx.firstName || 'there'},`,
     text(observation),
-    tpl.service,
+    tpl.service(ctx),
     tpl.question(ctx),
   ].filter(Boolean).join('\n\n');
   return {
@@ -189,6 +232,8 @@ function checkDraft({ subject, body, lead, niche, settings, templateId }) {
   const ctx = templateContext(lead, niche);
   // Every email must rest on genuine, quoted business context (brief §4: never a generic pitch).
   if (!ctx.evidence.length) reasons.push('no stored evidence to personalise from (Leads.evidence is empty)');
+  const tplDef = TEMPLATES[text(templateId)];
+  if (tplDef && tplDef.requiresOpportunity && !ctx.opportunity) reasons.push('no verified automation opportunity stored for this lead (Leads.opportunities)');
   if (!main.toLowerCase().includes(ctx.agency.toLowerCase())) reasons.push('body does not name the agency');
   const allowed = allowedNumberText({ lead, niche, templateId });
   for (const n of numbersIn(`${subj}\n${main}`)) if (!allowed.includes(n)) reasons.push(`number "${n}" is not supported by the stored evidence`);
@@ -205,7 +250,7 @@ function allowedNumberText({ lead, niche, templateId }) {
     text(lead.evidence),
     text(lead.company_name),
     text(lead.city),
-    tpl ? tpl.service : '',
+    tpl ? tpl.service(ctx) : '',
     tpl ? tpl.question(ctx) : '',
     ctx.cta,
   ].join('\n');
@@ -216,6 +261,8 @@ module.exports = {
   REQUIRED_SENDER_SETTINGS,
   BANNED_PHRASES,
   TEMPLATES,
+  OPPORTUNITY_PHRASES,
+  topOpportunity,
   MAX_BODY_WORDS,
   agencyName,
   firstNameOf,

@@ -380,15 +380,23 @@ function buildWf00() {
       type: 'n8n-nodes-base.gmail',
       typeVersion: 2.1,
       position: [660, 120],
-      onError: 'continueRegularOutput',
+      // A failed alert goes down the error branch and is logged, never assumed sent.
+      onError: 'continueErrorOutput',
     },
+    codeNode(wf, 'Alert Failure Row', embedModules(['wf00-format-error.js'], [
+      "const original = $('Format Error').first().json;",
+      'return [{ json: formatAlertFailure(original, $input.first().json.error, new Date().toISOString()) }];',
+    ]), [880, 220]),
+    { ...appendNode(wf, 'Append Alert Failure', 'Errors', [1100, 220]), onError: 'continueRegularOutput' },
   ];
 
-  const connections = mergeConnections(
-    chain('On Workflow Error', 'Config', 'Format Error'),
-    chain('Format Error', 'Errors Row', 'Append to Errors'),
-    chain('Format Error', 'Email Alert'),
-  );
+  const connections = edges([
+    ...chainEdges('On Workflow Error', 'Config', 'Format Error'),
+    ...chainEdges('Format Error', 'Errors Row', 'Append to Errors'),
+    connect('Format Error', 'Email Alert'),
+    connect('Email Alert', 'Alert Failure Row', 1),
+    connect('Alert Failure Row', 'Append Alert Failure'),
+  ]);
   return workflow('WF00 Error Handler', nodes, connections);
 }
 
@@ -436,6 +444,8 @@ function buildWf00SelfTest() {
 
 const USER_AGENT = 'FlowHQ-Research/1.0 (business research; low volume)';
 const DEFAULT_GEMINI_MODEL = 'gemini-2.5-flash';
+const DEFAULT_AI_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models';
+const DEFAULT_OVERPASS_URL = 'https://overpass-api.de/api/interpreter';
 const GLUE_ROWS_FROM = [
   'const rowsFrom = (nodeName) =>',
   '  $(nodeName).all().map((item) => item.json).filter((row) => row && Object.keys(row).length > 0);',
@@ -552,58 +562,100 @@ function chainEdges(...names) {
 
 function buildWf02() {
   const wf = 'WF02';
-  const mods = ['lib/common.js', 'lib/gemini.js', 'lib/registries.js', 'wf02-research-logic.js'];
-  const cols = require('../src/wf02-research-logic').WF02_COLUMNS;
+  const mods = ['lib/common.js', 'lib/gemini.js', 'lib/robots.js', 'lib/categories.js', 'lib/discovery.js', 'wf02-research-logic.js'];
+  const { WF02_COLUMNS } = require('../src/wf02-research-logic');
   const nodes = [
     stickyNote(wf, 'About WF02', [
-      '## WF02 Research & Qualify (manual)',
-      'Takes up to `RESEARCH_BATCH_SIZE` **New Lead** rows of the active niche: fetches the homepage plus at most 2 pages (contact, about/team), checks the company registry for the lead\'s country (GB: Companies House; US and IN adapters are not live and return UNVERIFIED), asks Gemini for scores with exact quotes, then applies deterministic caps and hard gates (architecture §3.3, §5).',
+      '## WF02 Discovery, Research & Qualify (manual; never sends email)',
+      '**Discovery** (only when Settings `DISCOVERY_ENABLED` is TRUE): searches OpenStreetMap through the Overpass API for businesses with a website, by the active campaign\'s regions × industries, rotating searches via the **Discovery_Log** tab. New businesses are added to Leads as `New Lead` (no contact details taken from OSM).',
       '',
-      'Outcome per lead: **Qualified**, **Disqualified** (reason recorded), **Researched** (needs a manual registry check), or unchanged with `last_error` (fetch/AI failure, retried next run). Registry results go to the `registry_*` columns, never to `evidence`.',
+      '**Research**: up to `RESEARCH_BATCH_SIZE` `New Lead` rows: robots.txt → homepage → ≤2 pages → Gemini proposes opportunities that must cite verbatim excerpts → deterministic contact extraction, caps and gates. Outcome: **Qualified**, **Needs Review**, **Disqualified**, or unchanged with `research_status = RETRY`.',
       '',
-      '**Refuses to run** if the Leads header lacks any column it writes (Sheets would silently drop them).',
+      'No company-registry lookups. Website text is untrusted: suspected prompt injection forces **Needs Review**. Refuses to run if the Leads header lacks a column it writes.',
       '',
-      '**Setup:** `sheet_id` and `gemini_model` in **Config**; Google Sheets credential on Sheets nodes; *Basic Auth* credential (CH API key as user, blank password) on **Companies House**; *Header Auth* credential (`x-goog-api-key`) on **Gemini**.',
-    ].join('\n'), [-60, -460], 760, 300),
+      '**Setup:** `sheet_id`, `gemini_model`, `ai_endpoint`, `overpass_url` in **Config**; Sheets credential on Sheets nodes; *Header Auth* (`x-goog-api-key`) on **Gemini**. Overpass, robots.txt and websites need no credential.',
+    ].join('\n'), [-60, -620], 860, 340),
     manualTrigger(wf, 'Run Research', [0, 0]),
-    configNode(wf, [['sheet_id', SHEET_ID_PLACEHOLDER], ['gemini_model', DEFAULT_GEMINI_MODEL]], [220, 0]),
+    configNode(wf, [['sheet_id', SHEET_ID_PLACEHOLDER], ['gemini_model', DEFAULT_GEMINI_MODEL], ['ai_endpoint', DEFAULT_AI_ENDPOINT], ['overpass_url', DEFAULT_OVERPASS_URL]], [220, 0]),
     readNode(wf, 'Read Settings', 'Settings', [440, 0]),
     readNode(wf, 'Read Niches', 'Niches', [660, 0]),
     readNode(wf, 'Read Leads', 'Leads', [880, 0]),
     readNode(wf, 'Read Suppression', 'Suppression', [1100, 0]),
-    headerReadNode(wf, 'Read Leads Header', 'Leads', [1320, 0]),
+    readNode(wf, 'Read Discovery_Log', 'Discovery_Log', [1320, 0]),
+    headerReadNode(wf, 'Read Leads Header', 'Leads', [1540, 0]),
     codeNode(wf, 'Select Batch', embedModules(mods, [
       ...GLUE_ROWS_FROM,
-      'const result = selectResearchBatch({',
+      'const now = new Date().toISOString();',
+      'const research = selectResearchBatch({',
       "  settingsRows: rowsFrom('Read Settings'),",
       "  nichesRows: rowsFrom('Read Niches'),",
       "  leadsRows: rowsFrom('Read Leads'),",
       "  suppressionRows: rowsFrom('Read Suppression'),",
       "  leadsHeaderRows: rowsFrom('Read Leads Header'),",
-      '  now: new Date().toISOString(),',
+      '  now,',
       '});',
-      'return [{ json: result }];',
-    ]), [1540, 0]),
-    splitCode(wf, 'Suppressed Leads', '$input.first().json.immediateUpdates', [1540, -200]),
-    updateNode(wf, 'Update Leads (Suppressed)', 'Leads', cols, 'lead_id', [1760, -200]),
-    splitCode(wf, 'Research Items', "$('Select Batch').first().json.researchItems", [1540, 100]),
-    httpNode(wf, 'Fetch Homepage', { urlField: 'request_url', responseFormat: 'text' }, [1760, 100]),
-    { ...codeNode(wf, 'Plan Pages', embedModules(mods, [
+      'const discovery = planDiscoveryFromRows({',
+      "  settingsRows: rowsFrom('Read Settings'),",
+      "  nichesRows: rowsFrom('Read Niches'),",
+      "  discoveryLogRows: rowsFrom('Read Discovery_Log'),",
+      "  overpassUrl: $('Config').first().json.overpass_url,",
+      '  now,',
+      '});',
+      'return [{ json: { ...research, discovery } }];',
+    ]), [1760, 0]),
+    // Branch 1 (top): discovery.
+    splitCode(wf, 'Discovery Queries', '$input.first().json.discovery.queries', [1980, -420]),
+    httpNode(wf, 'Overpass', { urlField: 'request_url', responseFormat: 'json', batchInterval: 5000, timeout: 90000 }, [2200, -420]),
+    codeNode(wf, 'Normalise Discoveries', embedModules(mods, [
+      ...GLUE_ROWS_FROM,
+      "const queries = $('Discovery Queries').all().map((i) => i.json);",
+      'const responses = [];',
+      '$input.all().forEach((item, i) => { responses[pairedIndex(item, i)] = item.json; });',
+      "const plan = $('Select Batch').first().json.discovery;",
+      'return [{ json: normaliseDiscoveries({',
+      '  queries,',
+      '  responses,',
+      "  leadsRows: rowsFrom('Read Leads'),",
+      "  suppressionRows: rowsFrom('Read Suppression'),",
+      '  niche: plan.niche,',
+      '  maxNew: plan.maxNew,',
+      '  now: new Date().toISOString(),',
+      '}) }];',
+    ]), [2420, -420]),
+    splitCode(wf, 'New Discovered Leads', '$input.first().json.newLeads', [2640, -500]),
+    appendNode(wf, 'Append Discovered Leads', 'Leads', [2860, -500]),
+    splitCode(wf, 'Discovery Log Rows', "$('Normalise Discoveries').first().json.logRows", [2640, -340]),
+    appendNode(wf, 'Append Discovery_Log', 'Discovery_Log', [2860, -340]),
+    // Branch 2: suppressed leads.
+    splitCode(wf, 'Suppressed Leads', "$('Select Batch').first().json.immediateUpdates", [1980, -180]),
+    updateNode(wf, 'Update Leads (Suppressed)', 'Leads', WF02_COLUMNS, 'lead_id', [2200, -180]),
+    // Branch 3 (bottom): research.
+    splitCode(wf, 'Research Items', "$('Select Batch').first().json.researchItems", [1980, 100]),
+    httpNode(wf, 'Fetch Robots', { urlField: 'robots_url', responseFormat: 'text', timeout: 10000 }, [2200, 100]),
+    codeNode(wf, 'Robots Gate', embedModules(mods, [
       "const research = $('Research Items').all().map((i) => i.json);",
+      'return $input.all().map((item, i) => {',
+      '  const r = research[pairedIndex(item, i)];',
+      '  return { json: robotsGate(r, r.robots_url ? item.json : {}) };',
+      '});',
+    ]), [2420, 100]),
+    httpNode(wf, 'Fetch Homepage', { urlField: 'request_url', responseFormat: 'text' }, [2640, 100]),
+    { ...codeNode(wf, 'Plan Pages', embedModules(mods, [
+      "const gated = $('Robots Gate').all().map((i) => i.json);",
       'const out = [];',
       '$input.all().forEach((item, i) => {',
-      '  const src = research[pairedIndex(item, i)];',
-      "  const html = !item.json.error && typeof item.json.data === 'string' ? item.json.data : '';",
-      '  if (src) planPagesForLead(src, html).forEach((p) => out.push({ json: p }));',
+      '  const src = gated[pairedIndex(item, i)];',
+      "  const html = src && src.request_url && !item.json.error && typeof item.json.data === 'string' ? item.json.data : '';",
+      '  if (src && html) planPagesForLead(src, html).forEach((p) => out.push({ json: p }));',
       '});',
       'return out;',
-    ]), [1980, 100]), alwaysOutputData: true },
-    httpNode(wf, 'Fetch Pages', { urlField: 'request_url', responseFormat: 'text' }, [2200, 100]),
+    ]), [2860, 100]), alwaysOutputData: true },
+    httpNode(wf, 'Fetch Pages', { urlField: 'request_url', responseFormat: 'text' }, [3080, 100]),
     codeNode(wf, 'Assemble Research', embedModules(mods, [
-      "const research = $('Research Items').all().map((i) => i.json);",
+      "const gated = $('Robots Gate').all().map((i) => i.json);",
       "const plans = $('Plan Pages').all().map((i) => i.json);",
       'const homeByLead = new Map();',
-      "$('Fetch Homepage').all().forEach((item, i) => { const r = research[pairedIndex(item, i)]; if (r) homeByLead.set(r.lead_id, item.json); });",
+      "$('Fetch Homepage').all().forEach((item, i) => { const r = gated[pairedIndex(item, i)]; if (r && r.request_url) homeByLead.set(r.lead_id, item.json); });",
       'const pagesByLead = new Map();',
       '$input.all().forEach((item, i) => {',
       '  const plan = plans[pairedIndex(item, i)];',
@@ -611,37 +663,34 @@ function buildWf02() {
       '  if (!pagesByLead.has(plan.lead_id)) pagesByLead.set(plan.lead_id, []);',
       '  pagesByLead.get(plan.lead_id).push({ url: plan.request_url, response: item.json });',
       '});',
-      "return research.map((r) => ({ json: assembleResearch(r, homeByLead.get(r.lead_id) || { error: 'homepage not fetched' }, pagesByLead.get(r.lead_id) || []) }));",
-    ]), [2420, 100]),
-    httpNode(wf, 'Companies House', { urlField: 'ch_request_url', auth: 'httpBasicAuth', responseFormat: 'json', batchInterval: 600 }, [2640, 100]),
+      "return gated.map((r) => ({ json: assembleResearch(r, homeByLead.get(r.lead_id) || { error: 'homepage not fetched' }, pagesByLead.get(r.lead_id) || []) }));",
+    ]), [3300, 100]),
     codeNode(wf, 'Build AI Requests', embedModules(mods, [
-      "const assembled = $('Assemble Research').all().map((i) => i.json);",
-      "const model = $('Config').first().json.gemini_model;",
-      'const now = new Date().toISOString();',
-      'return $input.all().map((item, i) => {',
-      '  const a = assembled[pairedIndex(item, i)];',
-      '  // Only a planned request has a real response; skipped items carry the empty-URL error.',
-      '  const registry = evaluateRegistry(a.registry_plan, a.registry_plan.request_url ? item.json : {}, now);',
-      '  return { json: { ...a, registry, ...buildAiRequest(a, registry, model) } };',
-      '});',
-    ]), [2860, 100]),
-    httpNode(wf, 'Gemini', { method: 'POST', urlField: 'request_url', auth: 'httpHeaderAuth', jsonBodyField: 'ai_body', responseFormat: 'json', batchInterval: 4500, timeout: 60000 }, [3080, 100]),
+      "const cfg = $('Config').first().json;",
+      'return $input.all().map((item) => ({ json: { ...item.json, ...buildAiRequest(item.json, cfg.gemini_model, cfg.ai_endpoint) } }));',
+    ]), [3520, 100]),
+    httpNode(wf, 'Gemini', { method: 'POST', urlField: 'request_url', auth: 'httpHeaderAuth', jsonBodyField: 'ai_body', responseFormat: 'json', batchInterval: 4500, timeout: 60000 }, [3740, 100]),
     codeNode(wf, 'Score & Gate', embedModules(mods, [
+      ...GLUE_ROWS_FROM,
       "const built = $('Build AI Requests').all().map((i) => i.json);",
+      "const suppressionRows = rowsFrom('Read Suppression');",
       'const now = new Date().toISOString();',
       'return $input.all().map((item, i) => {',
       '  const b = built[pairedIndex(item, i)];',
-      '  return { json: scoreAndGate({ assembled: b, registry: b.registry, aiResponse: b.request_url ? item.json : {}, now }) };',
+      '  return { json: scoreAndGate({ assembled: b, aiResponse: b.request_url ? item.json : {}, suppressionRows, now }) };',
       '});',
-    ]), [3300, 100]),
-    updateNode(wf, 'Update Leads (Research)', 'Leads', cols, 'lead_id', [3520, 100]),
+    ]), [3960, 100]),
+    updateNode(wf, 'Update Leads (Research)', 'Leads', WF02_COLUMNS, 'lead_id', [4180, 100]),
   ];
   const connections = edges([
-    ...chainEdges('Run Research', 'Config', 'Read Settings', 'Read Niches', 'Read Leads', 'Read Suppression', 'Read Leads Header', 'Select Batch'),
+    ...chainEdges('Run Research', 'Config', 'Read Settings', 'Read Niches', 'Read Leads', 'Read Suppression', 'Read Discovery_Log', 'Read Leads Header', 'Select Batch'),
+    ...chainEdges('Select Batch', 'Discovery Queries', 'Overpass', 'Normalise Discoveries'),
+    ...chainEdges('Normalise Discoveries', 'New Discovered Leads', 'Append Discovered Leads'),
+    ...chainEdges('Normalise Discoveries', 'Discovery Log Rows', 'Append Discovery_Log'),
     ...chainEdges('Select Batch', 'Suppressed Leads', 'Update Leads (Suppressed)'),
-    ...chainEdges('Select Batch', 'Research Items', 'Fetch Homepage', 'Plan Pages', 'Fetch Pages', 'Assemble Research', 'Companies House', 'Build AI Requests', 'Gemini', 'Score & Gate', 'Update Leads (Research)'),
+    ...chainEdges('Select Batch', 'Research Items', 'Fetch Robots', 'Robots Gate', 'Fetch Homepage', 'Plan Pages', 'Fetch Pages', 'Assemble Research', 'Build AI Requests', 'Gemini', 'Score & Gate', 'Update Leads (Research)'),
   ]);
-  return workflow('WF02 Research & Qualify', nodes, connections);
+  return workflow('WF02 Discovery, Research & Qualify', nodes, connections);
 }
 
 // ---------- WF03 Draft Generation ----------
@@ -657,10 +706,10 @@ function buildWf03() {
       '',
       'Drafts you set to **Needs Edit** and then edit by hand are re-checked on the next run.',
       '',
-      '**Setup:** `sheet_id`, `gemini_model` in **Config**; Sheets credential; *Header Auth* credential on **Gemini**. Settings `SENDER_NAME`, `BUSINESS_LEGAL_NAME`, `BUSINESS_POSTAL_ADDRESS`, `WEBSITE_URL`, `PRIVACY_URL` must be filled.',
+      '**Setup:** `sheet_id`, `gemini_model`, `ai_endpoint` in **Config**; Sheets credential; *Header Auth* credential on **Gemini**. Settings `SENDER_NAME`, `BUSINESS_LEGAL_NAME`, `BUSINESS_POSTAL_ADDRESS`, `WEBSITE_URL`, `PRIVACY_URL` must be filled. The campaign\'s `outreach_language` must match the template language.',
     ].join('\n'), [-60, -440], 760, 280),
     manualTrigger(wf, 'Run Drafting', [0, 0]),
-    configNode(wf, [['sheet_id', SHEET_ID_PLACEHOLDER], ['gemini_model', DEFAULT_GEMINI_MODEL]], [220, 0]),
+    configNode(wf, [['sheet_id', SHEET_ID_PLACEHOLDER], ['gemini_model', DEFAULT_GEMINI_MODEL], ['ai_endpoint', DEFAULT_AI_ENDPOINT]], [220, 0]),
     readNode(wf, 'Read Settings', 'Settings', [440, 0]),
     readNode(wf, 'Read Niches', 'Niches', [660, 0]),
     readNode(wf, 'Read Leads', 'Leads', [880, 0]),
@@ -673,6 +722,7 @@ function buildWf03() {
       "  leadsRows: rowsFrom('Read Leads'),",
       "  suppressionRows: rowsFrom('Read Suppression'),",
       "  model: $('Config').first().json.gemini_model,",
+      "  endpoint: $('Config').first().json.ai_endpoint,",
       '  now: new Date().toISOString(),',
       '});',
       'return [{ json: result }];',

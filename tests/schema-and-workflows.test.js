@@ -176,10 +176,13 @@ test('WF01 writes are strict: RAW values, no silent new columns, update by row_n
   for (const c of mapped.slice(1)) assert.ok(TABS.Import.includes(c));
 });
 
-test('WF00 alert path survives a failing Sheets write', () => {
+test('WF00 alert path survives a failing Sheets write, and a failed alert is logged', () => {
   const wf = workflows['WF00-error-handler.json'];
   assert.equal(wf.nodes.find((n) => n.name === 'Append to Errors').onError, 'continueRegularOutput');
-  assert.equal(wf.nodes.find((n) => n.name === 'Email Alert').onError, 'continueRegularOutput');
   // The email branch hangs off Format Error directly, not off the Sheets write.
   assert.ok(wf.connections['Format Error'].main[0].some((c) => c.node === 'Email Alert'));
+  // A failed alert goes to the error output and becomes its own Errors row.
+  assert.equal(wf.nodes.find((n) => n.name === 'Email Alert').onError, 'continueErrorOutput');
+  assert.deepEqual(wf.connections['Email Alert'].main[1].map((c) => c.node), ['Alert Failure Row']);
+  assert.deepEqual(wf.connections['Alert Failure Row'].main[0].map((c) => c.node), ['Append Alert Failure']);
 });

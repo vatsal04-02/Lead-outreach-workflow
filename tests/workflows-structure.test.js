@@ -107,9 +107,33 @@ test('HTTP nodes use credentials by type only, continue on error, and throttle',
     }
   }
   const wf2 = load('WF02-research-qualify.json');
-  assert.equal(node(wf2, 'Companies House').parameters.genericAuthType, 'httpBasicAuth');
   assert.equal(node(wf2, 'Gemini').parameters.genericAuthType, 'httpHeaderAuth');
-  assert.equal(node(wf2, 'Fetch Homepage').parameters.authentication, undefined);
+  // Discovery, robots.txt and websites need no credential at all.
+  for (const name of ['Overpass', 'Fetch Robots', 'Fetch Homepage', 'Fetch Pages']) assert.equal(node(wf2, name).parameters.authentication, undefined, name);
+  // The only credentialed HTTP node in the whole system is Gemini (no registry APIs).
+  const authed = ALL.flatMap((f) => load(f).nodes.filter((x) => x.type === 'n8n-nodes-base.httpRequest' && x.parameters.authentication).map((x) => `${f}/${x.name}`));
+  assert.deepEqual(authed.sort(), ['WF02-research-qualify.json/Gemini', 'WF03-draft-generation.json/Gemini']);
+});
+
+test('WF02: discovery appends leads before its log, and never touches Gmail', () => {
+  const wf = load('WF02-research-qualify.json');
+  assert.ok(node(wf, 'New Discovered Leads').position[1] < node(wf, 'Discovery Log Rows').position[1]);
+  assert.equal(node(wf, 'Append Discovered Leads').parameters.sheetName.value, 'Leads');
+  assert.equal(node(wf, 'Append Discovery_Log').parameters.sheetName.value, 'Discovery_Log');
+  assert.ok(!wf.nodes.some((n) => n.type === 'n8n-nodes-base.gmail'), 'WF02 must not send email');
+  assert.deepEqual(targets(wf, 'Research Items'), ['Fetch Robots']);
+  assert.deepEqual(targets(wf, 'Fetch Robots'), ['Robots Gate']);
+  assert.deepEqual(targets(wf, 'Robots Gate'), ['Fetch Homepage']);
+  assert.equal(node(wf, 'Overpass').parameters.options.batching.batch.batchInterval, 5000);
+});
+
+test('only WF04 sends prospecting email; WF00 only alerts FlowHQ', () => {
+  for (const f of ALL) {
+    const senders = load(f).nodes.filter((n) => n.type === 'n8n-nodes-base.gmail' && n.parameters.operation !== 'getAll');
+    if (f.startsWith('WF04')) assert.equal(senders.length, 1);
+    else if (f.startsWith('WF00-error')) assert.deepEqual(senders.map((n) => n.parameters.sendTo), ['={{ $json.alert_email }}']);
+    else assert.equal(senders.length, 0, f);
+  }
 });
 
 test('WF04: Gmail is only reachable through the lock and lock check', () => {

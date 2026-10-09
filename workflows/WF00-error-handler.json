@@ -58,7 +58,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Generated from src/wf00-format-error.js by scripts/build.js.\n// Do not edit here: edit the source, run `npm run build`, and re-import the workflow.\n\n// ===== src/wf00-format-error.js =====\n\n// WF00 Error Handler: turns n8n Error Trigger output into an `Errors` row and an\n// alert email. Embedded verbatim into the \"Format Error\" Code node by\n// `npm run build` (everything after the EXPORT marker is stripped).\n\nconst MAX_MESSAGE_LENGTH = 1000;\n\nfunction errText(value) {\n  if (value === null || value === undefined) return '';\n  return String(value).trim();\n}\n\n// Spreadsheets treat a leading = + - @ as a formula; prefix with ' so the text\n// is stored literally even if the sheet is later switched to USER_ENTERED.\nfunction sheetSafe(value) {\n  const s = errText(value);\n  return /^[=+\\-@]/.test(s) ? `'${s}` : s;\n}\n\n// Later workflows can include \"lead_id=<id>\" in an error message (for example\n// from a Stop and Error node) so the Errors row links back to the lead.\nfunction extractLeadId(message) {\n  const match = /lead_id\\s*[=:]\\s*([^\\s;,]+)/i.exec(message);\n  return match ? match[1] : '';\n}\n\n// Accepts both shapes the Error Trigger emits: execution errors\n// ({ execution, workflow }) and trigger/activation errors ({ trigger, workflow }).\nfunction formatError(data, now) {\n  const d = data || {};\n  const execution = d.execution || {};\n  const trigger = d.trigger || {};\n  const error = execution.error || trigger.error || {};\n  const workflowName = errText(d.workflow && d.workflow.name) || '(unknown workflow)';\n  const node = errText(execution.lastNodeExecuted) || errText(error.node && error.node.name) || (d.trigger ? '(trigger)' : '');\n  const rawMessage = errText(error.message) || errText(error.description) || 'No error message provided';\n  const description = errText(error.description);\n  const fullMessage = description && description !== rawMessage ? `${rawMessage}: ${description}` : rawMessage;\n  const executionRef = execution.id ? `[execution ${execution.id}] ` : '';\n  const message = (executionRef + fullMessage).slice(0, MAX_MESSAGE_LENGTH);\n  const timestamp = errText(now) || new Date().toISOString();\n\n  const row = {\n    timestamp,\n    workflow: sheetSafe(workflowName),\n    node: sheetSafe(node),\n    lead_id: sheetSafe(extractLeadId(fullMessage)),\n    message: sheetSafe(message),\n  };\n\n  const emailSubject = `[FlowHQ n8n] ${workflowName} failed${node ? ` at \"${node}\"` : ''}`;\n  const emailBody = [\n    `Workflow: ${workflowName}`,\n    `Node: ${node || '(unknown)'}`,\n    `Time (UTC): ${timestamp}`,\n    `Mode: ${errText(execution.mode || trigger.mode) || '(unknown)'}`,\n    `Execution: ${errText(execution.url) || errText(execution.id) || '(none)'}`,\n    '',\n    `Error: ${fullMessage.slice(0, 4000)}`,\n    '',\n    'This alert was also written to the Errors tab (unless the Sheets write itself failed).',\n  ].join('\\n');\n\n  return { row, emailSubject, emailBody };\n}\n\n// ---- n8n glue ----\nconst { row, emailSubject, emailBody } = formatError($('On Workflow Error').first().json, new Date().toISOString());\nreturn [{ json: { ...row, email_subject: emailSubject, email_body: emailBody, alert_email: $('Config').first().json.alert_email } }];"
+        "jsCode": "// Generated from src/wf00-format-error.js by scripts/build.js.\n// Do not edit here: edit the source, run `npm run build`, and re-import the workflow.\n\n// ===== src/wf00-format-error.js =====\n\n// WF00 Error Handler: turns n8n Error Trigger output into an `Errors` row and an\n// alert email. Embedded verbatim into the \"Format Error\" Code node by\n// `npm run build` (everything after the EXPORT marker is stripped).\n\nconst MAX_MESSAGE_LENGTH = 1000;\n\nfunction errText(value) {\n  if (value === null || value === undefined) return '';\n  return String(value).trim();\n}\n\n// Spreadsheets treat a leading = + - @ as a formula; prefix with ' so the text\n// is stored literally even if the sheet is later switched to USER_ENTERED.\nfunction sheetSafe(value) {\n  const s = errText(value);\n  return /^[=+\\-@]/.test(s) ? `'${s}` : s;\n}\n\n// Later workflows can include \"lead_id=<id>\" in an error message (for example\n// from a Stop and Error node) so the Errors row links back to the lead.\nfunction extractLeadId(message) {\n  const match = /lead_id\\s*[=:]\\s*([^\\s;,]+)/i.exec(message);\n  return match ? match[1] : '';\n}\n\n// Accepts both shapes the Error Trigger emits: execution errors\n// ({ execution, workflow }) and trigger/activation errors ({ trigger, workflow }).\nfunction formatError(data, now) {\n  const d = data || {};\n  const execution = d.execution || {};\n  const trigger = d.trigger || {};\n  const error = execution.error || trigger.error || {};\n  const workflowName = errText(d.workflow && d.workflow.name) || '(unknown workflow)';\n  const node = errText(execution.lastNodeExecuted) || errText(error.node && error.node.name) || (d.trigger ? '(trigger)' : '');\n  const rawMessage = errText(error.message) || errText(error.description) || 'No error message provided';\n  const description = errText(error.description);\n  const fullMessage = description && description !== rawMessage ? `${rawMessage}: ${description}` : rawMessage;\n  const executionRef = execution.id ? `[execution ${execution.id}] ` : '';\n  const message = (executionRef + fullMessage).slice(0, MAX_MESSAGE_LENGTH);\n  const timestamp = errText(now) || new Date().toISOString();\n\n  const row = {\n    timestamp,\n    workflow: sheetSafe(workflowName),\n    node: sheetSafe(node),\n    lead_id: sheetSafe(extractLeadId(fullMessage)),\n    message: sheetSafe(message),\n  };\n\n  const emailSubject = `[FlowHQ n8n] ${workflowName} failed${node ? ` at \"${node}\"` : ''}`;\n  const emailBody = [\n    `Workflow: ${workflowName}`,\n    `Node: ${node || '(unknown)'}`,\n    `Time (UTC): ${timestamp}`,\n    `Mode: ${errText(execution.mode || trigger.mode) || '(unknown)'}`,\n    `Execution: ${errText(execution.url) || errText(execution.id) || '(none)'}`,\n    '',\n    `Error: ${fullMessage.slice(0, 4000)}`,\n    '',\n    'This alert was also written to the Errors tab (unless the Sheets write itself failed).',\n  ].join('\\n');\n\n  return { row, emailSubject, emailBody };\n}\n\n// A failed alert email is itself recorded, so an alert is never assumed sent.\nfunction formatAlertFailure(original, alertError, now) {\n  const o = original || {};\n  const e = alertError || {};\n  const reason = typeof e === 'string' ? e : errText(e.message) || errText(e.description) || JSON.stringify(e);\n  return {\n    timestamp: errText(now) || new Date().toISOString(),\n    workflow: 'WF00 Error Handler',\n    node: 'Email Alert',\n    lead_id: sheetSafe(o.lead_id),\n    message: sheetSafe(`Alert email NOT sent (${reason.slice(0, 300)}). Original failure: ${errText(o.workflow)} at \"${errText(o.node)}\".`).slice(0, MAX_MESSAGE_LENGTH),\n  };\n}\n\n// ---- n8n glue ----\nconst { row, emailSubject, emailBody } = formatError($('On Workflow Error').first().json, new Date().toISOString());\nreturn [{ json: { ...row, email_subject: emailSubject, email_body: emailBody, alert_email: $('Config').first().json.alert_email } }];"
       },
       "id": "05fbd494-b183-48e1-ada3-6ea33d5f57d2",
       "name": "Format Error",
@@ -134,6 +134,53 @@
         660,
         120
       ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Generated from src/wf00-format-error.js by scripts/build.js.\n// Do not edit here: edit the source, run `npm run build`, and re-import the workflow.\n\n// ===== src/wf00-format-error.js =====\n\n// WF00 Error Handler: turns n8n Error Trigger output into an `Errors` row and an\n// alert email. Embedded verbatim into the \"Format Error\" Code node by\n// `npm run build` (everything after the EXPORT marker is stripped).\n\nconst MAX_MESSAGE_LENGTH = 1000;\n\nfunction errText(value) {\n  if (value === null || value === undefined) return '';\n  return String(value).trim();\n}\n\n// Spreadsheets treat a leading = + - @ as a formula; prefix with ' so the text\n// is stored literally even if the sheet is later switched to USER_ENTERED.\nfunction sheetSafe(value) {\n  const s = errText(value);\n  return /^[=+\\-@]/.test(s) ? `'${s}` : s;\n}\n\n// Later workflows can include \"lead_id=<id>\" in an error message (for example\n// from a Stop and Error node) so the Errors row links back to the lead.\nfunction extractLeadId(message) {\n  const match = /lead_id\\s*[=:]\\s*([^\\s;,]+)/i.exec(message);\n  return match ? match[1] : '';\n}\n\n// Accepts both shapes the Error Trigger emits: execution errors\n// ({ execution, workflow }) and trigger/activation errors ({ trigger, workflow }).\nfunction formatError(data, now) {\n  const d = data || {};\n  const execution = d.execution || {};\n  const trigger = d.trigger || {};\n  const error = execution.error || trigger.error || {};\n  const workflowName = errText(d.workflow && d.workflow.name) || '(unknown workflow)';\n  const node = errText(execution.lastNodeExecuted) || errText(error.node && error.node.name) || (d.trigger ? '(trigger)' : '');\n  const rawMessage = errText(error.message) || errText(error.description) || 'No error message provided';\n  const description = errText(error.description);\n  const fullMessage = description && description !== rawMessage ? `${rawMessage}: ${description}` : rawMessage;\n  const executionRef = execution.id ? `[execution ${execution.id}] ` : '';\n  const message = (executionRef + fullMessage).slice(0, MAX_MESSAGE_LENGTH);\n  const timestamp = errText(now) || new Date().toISOString();\n\n  const row = {\n    timestamp,\n    workflow: sheetSafe(workflowName),\n    node: sheetSafe(node),\n    lead_id: sheetSafe(extractLeadId(fullMessage)),\n    message: sheetSafe(message),\n  };\n\n  const emailSubject = `[FlowHQ n8n] ${workflowName} failed${node ? ` at \"${node}\"` : ''}`;\n  const emailBody = [\n    `Workflow: ${workflowName}`,\n    `Node: ${node || '(unknown)'}`,\n    `Time (UTC): ${timestamp}`,\n    `Mode: ${errText(execution.mode || trigger.mode) || '(unknown)'}`,\n    `Execution: ${errText(execution.url) || errText(execution.id) || '(none)'}`,\n    '',\n    `Error: ${fullMessage.slice(0, 4000)}`,\n    '',\n    'This alert was also written to the Errors tab (unless the Sheets write itself failed).',\n  ].join('\\n');\n\n  return { row, emailSubject, emailBody };\n}\n\n// A failed alert email is itself recorded, so an alert is never assumed sent.\nfunction formatAlertFailure(original, alertError, now) {\n  const o = original || {};\n  const e = alertError || {};\n  const reason = typeof e === 'string' ? e : errText(e.message) || errText(e.description) || JSON.stringify(e);\n  return {\n    timestamp: errText(now) || new Date().toISOString(),\n    workflow: 'WF00 Error Handler',\n    node: 'Email Alert',\n    lead_id: sheetSafe(o.lead_id),\n    message: sheetSafe(`Alert email NOT sent (${reason.slice(0, 300)}). Original failure: ${errText(o.workflow)} at \"${errText(o.node)}\".`).slice(0, MAX_MESSAGE_LENGTH),\n  };\n}\n\n// ---- n8n glue ----\nconst original = $('Format Error').first().json;\nreturn [{ json: formatAlertFailure(original, $input.first().json.error, new Date().toISOString()) }];"
+      },
+      "id": "51c9d2d9-240e-45b1-af14-f194b00fc5ce",
+      "name": "Alert Failure Row",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $('Config').first().json.sheet_id }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Errors",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {
+          "cellFormat": "RAW",
+          "handlingExtraData": "error"
+        }
+      },
+      "id": "622ec8e6-0636-4c12-af64-83515102cb8b",
+      "name": "Append Alert Failure",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1100,
+        220
+      ],
       "onError": "continueRegularOutput"
     }
   ],
@@ -181,6 +228,29 @@
         [
           {
             "node": "Append to Errors",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Email Alert": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Alert Failure Row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Alert Failure Row": {
+      "main": [
+        [
+          {
+            "node": "Append Alert Failure",
             "type": "main",
             "index": 0
           }

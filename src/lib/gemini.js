@@ -10,10 +10,14 @@ const { text } = require('./common');
 
 const GEMINI_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models';
 
-function geminiUrl(model) {
+// The model and endpoint come from the workflow's Config node (gemini_model,
+// ai_endpoint); the endpoint must be an https URL.
+function geminiUrl(model, endpoint) {
   const m = text(model);
   if (!/^[a-z0-9][a-z0-9.\-]*$/i.test(m)) throw new Error(`Invalid Gemini model name "${m}" in the Config node.`);
-  return `${GEMINI_ENDPOINT}/${m}:generateContent`;
+  const base = (text(endpoint) || GEMINI_ENDPOINT).replace(/\/+$/, '');
+  if (!/^https:\/\/[a-z0-9.-]+(?::\d+)?(?:\/[\w.\-/]*)?$/i.test(base)) throw new Error(`Invalid ai_endpoint "${base}" in the Config node (must be an https URL).`);
+  return `${base}/${m}:generateContent`;
 }
 
 function geminiBody(prompt, { temperature = 0.2, maxOutputTokens = 2048 } = {}) {

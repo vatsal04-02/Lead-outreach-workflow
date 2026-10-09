@@ -1,1 +1,1 @@
-date,new_leads,qualified,qualification_rate,drafts_approved,drafts_rejected,emails_sent,bounces,bounce_rate,unsubscribes,replies,positive_replies,meetings_booked,proposals_sent,clients_won,won_value
+date,new_leads,qualified,qualification_rate,drafts_approved,drafts_rejected,emails_sent,bounces,bounce_rate,unsubscribes,replies,positive_replies,meetings_booked,proposals_sent,clients_won,won_value,discovered,researched,needs_review,send_failures

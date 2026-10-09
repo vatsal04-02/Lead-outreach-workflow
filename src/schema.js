@@ -8,7 +8,9 @@
 const TABS = {
   Settings: ['key', 'value', 'notes'],
 
-  // Fields from docs/01-strategy-icp-offer.md §8.
+  // One campaign per row (docs/01-strategy-icp-offer.md §8). The targeting
+  // columns after template_id were appended for multi-industry, multi-country
+  // campaigns; the registry-only legal_entity_required column was removed.
   Niches: [
     'niche_id',
     'active',
@@ -20,8 +22,17 @@ const TABS = {
     'service_angle',
     'cta',
     'exclusions',
-    'legal_entity_required',
     'template_id',
+    'industries',
+    'regions',
+    'discovery_provider',
+    'osm_tag_filters',
+    'outreach_language',
+    'max_discovered_per_run',
+    'min_qualify_score',
+    'required_evidence',
+    'size_criteria',
+    'outreach_basis_reviewed',
   ],
 
   // docs/02-mvp-architecture.md §3.6: the Leads columns a human fills in,
@@ -63,7 +74,6 @@ const TABS = {
     'discovery_source_url',
     'discovered_at',
     'company_number',
-    'company_status',
     'legal_entity_type',
     'stage',
     'fit_score',
@@ -96,14 +106,16 @@ const TABS = {
     'notes',
     'last_updated',
     'last_error',
-    // Company-registry verification (WF02), appended in the multi-country
-    // registry change; see docs/02 §3.3 and src/lib/registries.js.
-    'registry_country',
-    'registry_provider',
-    'registry_status',
-    'registry_source_url',
-    'registry_checked_at',
-    'registry_match_rationale',
+    // Discovery and research fields (WF02), appended at the end. They replace
+    // the registry_* columns, which were removed with company-registry checks.
+    'business_category',
+    'services_summary',
+    'discovery_status',
+    'research_status',
+    'researched_at',
+    'evidence_quality',
+    'opportunities',
+    'contact_readiness',
   ],
 
   Suppression: ['email', 'domain', 'reason', 'source', 'added_at'],
@@ -121,6 +133,23 @@ const TABS = {
   ],
 
   Errors: ['timestamp', 'workflow', 'node', 'lead_id', 'message'],
+
+  // One row per discovery search (WF02); used to rotate searches.
+  Discovery_Log: [
+    'query_key',
+    'niche_id',
+    'provider',
+    'country',
+    'region',
+    'category',
+    'run_at',
+    'status',
+    'results',
+    'new_leads',
+    'duplicates',
+    'skipped',
+    'error',
+  ],
 
   // §8 lists these metrics in prose; Phase 6 (WF06) writes them.
   Metrics: [
@@ -140,6 +169,10 @@ const TABS = {
     'proposals_sent',
     'clients_won',
     'won_value',
+    'discovered',
+    'researched',
+    'needs_review',
+    'send_failures',
   ],
 };
 
@@ -165,9 +198,16 @@ const SETTINGS_ROWS = [
   // Added in Phase 3-7 (rows appended, no column changes): see docs/02 §3.1.
   ['BUSINESS_LEGAL_NAME', '', "FlowHQ's registered legal name, required in every email footer (compliance rule 4)."],
   ['LIVE_RECIPIENT_ALLOWLIST', '', 'Optional. When set, live sends go ONLY to these comma-separated addresses (Phase 7 testing). Clear it to go live.'],
+  // Added with public-web discovery (rows appended, no column changes).
+  ['DISCOVERY_ENABLED', 'FALSE', 'WF02 discovers new businesses through OpenStreetMap only when exactly TRUE.'],
+  ['DISCOVERY_QUERIES_PER_RUN', '2', 'Searches (region x industry) per WF02 run, 1-10.'],
+  ['DISCOVERY_REFRESH_DAYS', '30', 'A completed search is repeated only after this many days.'],
 ];
 
 // Test 1 niche, from docs/01-strategy-icp-offer.md §8.
+// Campaign rows. Only ACTIVE_NICHE is processed; the others are inactive
+// examples showing other countries and industries. outreach_basis_reviewed must
+// be TRUE (after a legal review for that country) before WF04 sends live email.
 const NICHE_ROWS = [
   {
     niche_id: 'uk-estate-letting',
@@ -179,12 +219,67 @@ const NICHE_ROWS = [
     pain_signals:
       '24h reply promise; phone-only viewings; office closed evenings/weekends; shared generic inbox; hiring admin staff; reviews citing slow replies',
     service_angle:
-      'Enquiry Autopilot: instant acknowledgement, logging, routing, and chasers for portal and website enquiries',
+      'Enquiry Autopilot: acknowledgement within minutes, logging, routing, and chasers for portal and website enquiries',
     cta: 'Free 15-minute enquiry workflow review',
     exclusions:
       'National chains; corporate franchise branches; sole traders/partnerships; no published email; "no solicitation" notice',
-    legal_entity_required: 'limited_company_or_llp',
     template_id: 'uk-estate-letting-v1',
+    industries: 'estate_agent; property_management',
+    regions: 'Reading; Leicester; Norwich',
+    discovery_provider: 'osm_overpass',
+    osm_tag_filters: '',
+    outreach_language: 'en',
+    max_discovered_per_run: '20',
+    min_qualify_score: '',
+    required_evidence: 'website; published_email; verified_opportunity',
+    size_criteria: '1-3 branches',
+    outreach_basis_reviewed: 'FALSE',
+  },
+  {
+    niche_id: 'in-healthcare-pune',
+    active: 'FALSE',
+    country: 'IN',
+    timezone: 'Asia/Kolkata',
+    target_description: 'Independent clinics, dental practices, physiotherapy centres and diagnostic labs in Pune',
+    decision_maker_roles: 'Owner; Doctor-owner; Practice Manager; Clinic Manager',
+    pain_signals: 'phone-only appointments; WhatsApp-only booking; manual reminder messages; long enquiry forms',
+    service_angle: 'Appointment requests, confirmations and reminders without re-typing details',
+    cta: 'Free 15-minute workflow review',
+    exclusions: 'Hospital chains; government facilities; no published business email',
+    template_id: 'general-automation-v1',
+    industries: 'clinic; dentist; physiotherapy; diagnostic_lab',
+    regions: 'Pune',
+    discovery_provider: 'osm_overpass',
+    osm_tag_filters: '',
+    outreach_language: 'en',
+    max_discovered_per_run: '20',
+    min_qualify_score: '60',
+    required_evidence: 'website; published_email; verified_opportunity',
+    size_criteria: '',
+    outreach_basis_reviewed: 'FALSE',
+  },
+  {
+    niche_id: 'us-home-services-austin',
+    active: 'FALSE',
+    country: 'US',
+    timezone: 'America/Chicago',
+    target_description: 'Plumbing, electrical and HVAC businesses in Austin, Texas',
+    decision_maker_roles: 'Owner; Operations Manager; Office Manager',
+    pain_signals: 'call-only quotes; no online booking; after-hours emergency line only',
+    service_angle: 'Capture and route job enquiries; automatic follow-up on unanswered quotes',
+    cta: 'Free 15-minute workflow review',
+    exclusions: 'National franchises; no published business email',
+    template_id: 'general-automation-v1',
+    industries: 'plumber; electrician; hvac',
+    regions: 'Austin',
+    discovery_provider: 'osm_overpass',
+    osm_tag_filters: '',
+    outreach_language: 'en',
+    max_discovered_per_run: '20',
+    min_qualify_score: '60',
+    required_evidence: 'website; published_email; verified_opportunity',
+    size_criteria: '',
+    outreach_basis_reviewed: 'FALSE',
   },
 ];
 

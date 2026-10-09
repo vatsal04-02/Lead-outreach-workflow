@@ -32,6 +32,7 @@ const STAGE = {
   NEW: 'New Lead',
   RESEARCHED: 'Researched',
   QUALIFIED: 'Qualified',
+  NEEDS_REVIEW: 'Needs Review',
   DISQUALIFIED: 'Disqualified',
   DRAFT_READY: 'Draft Ready',
   APPROVED: 'Approved',
@@ -81,6 +82,59 @@ function registrableDomain(host) {
   if (labels.length <= 2) return h;
   const lastTwo = labels.slice(-2).join('.');
   return MULTI_LABEL_SUFFIXES.has(lastTwo) ? labels.slice(-3).join('.') : lastTwo;
+}
+
+const COUNTRY_ALIASES = {
+  GB: ['gb', 'uk', 'united kingdom', 'great britain', 'england', 'scotland', 'wales', 'northern ireland'],
+  US: ['us', 'usa', 'united states', 'united states of america', 'u.s.', 'u.s.a.'],
+  IN: ['in', 'ind', 'india', 'bharat'],
+  CA: ['ca', 'canada'],
+  AU: ['au', 'australia'],
+};
+
+// ISO 3166-1 alpha-2 code, or '' if the value isn't recognisable.
+function normaliseCountry(value) {
+  const v = text(value).toLowerCase();
+  if (!v) return '';
+  for (const [code, aliases] of Object.entries(COUNTRY_ALIASES)) if (aliases.includes(v)) return code;
+  return /^[a-z]{2}$/.test(v) ? v.toUpperCase() : '';
+}
+
+// Splits a configuration cell such as "Reading; Leicester" or "a, b".
+function listSetting(value) {
+  return text(value).split(/[;,\n]+/).map((x) => x.trim()).filter(Boolean);
+}
+
+// Hosting platforms where many unrelated businesses share one registrable domain.
+// Subdomain platforms key on the full host; path platforms on host + first path
+// segment(s). Social/profile platforms are never fetched for research.
+const SUBDOMAIN_PLATFORMS = new Set([
+  'wixsite.com', 'weebly.com', 'wordpress.com', 'blogspot.com', 'business.site', 'godaddysites.com',
+  'square.site', 'webflow.io', 'netlify.app', 'github.io', 'jimdosite.com', 'mystrikingly.com', 'carrd.co',
+]);
+const PATH_PLATFORMS = { 'sites.google.com': 2, 'facebook.com': 1, 'instagram.com': 1, 'linkedin.com': 2, 'linktr.ee': 1, 'x.com': 1, 'twitter.com': 1, 'youtube.com': 1, 'yell.com': 2, 'justdial.com': 2 };
+const NON_RESEARCHABLE_HOSTS = new Set(['facebook.com', 'instagram.com', 'linkedin.com', 'linktr.ee', 'x.com', 'twitter.com', 'youtube.com', 'yell.com', 'justdial.com', 'tiktok.com', 'wa.me', 'whatsapp.com']);
+
+// Stable dedupe key for a business website: the registrable domain, except on
+// shared platforms where unrelated businesses share that domain.
+function businessKey(url) {
+  const host = parseHost(url);
+  if (!host) return '';
+  const domain = registrableDomain(host);
+  if (SUBDOMAIN_PLATFORMS.has(domain)) return host.replace(/^www\./, '');
+  if (PATH_PLATFORMS[domain] || PATH_PLATFORMS[host.replace(/^www\./, '')]) {
+    const depth = PATH_PLATFORMS[domain] || PATH_PLATFORMS[host.replace(/^www\./, '')];
+    const path = (/^(?:https?:\/\/)?[^/?#]+(\/[^?#]*)?/i.exec(text(url))[1] || '').split('/').filter(Boolean).slice(0, depth);
+    return [host.replace(/^www\./, ''), ...path.map((p) => p.toLowerCase())].join('/');
+  }
+  return domain;
+}
+
+// True for profile/directory platforms that must not be fetched or treated as
+// the business's own website.
+function isNonResearchableSite(url) {
+  const host = parseHost(url).replace(/^www\./, '');
+  return Boolean(host) && (NON_RESEARCHABLE_HOSTS.has(host) || NON_RESEARCHABLE_HOSTS.has(registrableDomain(host)));
 }
 
 function normaliseEmail(value) {
@@ -244,6 +298,10 @@ module.exports = {
   isTrue,
   parseHost,
   registrableDomain,
+  businessKey,
+  isNonResearchableSite,
+  normaliseCountry,
+  listSetting,
   normaliseEmail,
   isValidEmail,
   emailDomain,
