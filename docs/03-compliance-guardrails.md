@@ -1,0 +1,34 @@
+# Compliance guardrails
+
+> **This is not legal advice.** It's a working summary to design the system safely. Before scaling beyond a small test, get a short review from someone qualified, especially on UK GDPR legitimate interests and on India's DPDP Act, which may apply to data FlowHQ processes in India.
+
+## 1. Country summary (B2B cold email)
+
+| | UK | US | Canada | Australia |
+|---|---|---|---|---|
+| Law | PECR + UK GDPR | CAN-SPAM | CASL | Spam Act 2003 |
+| Cold B2B email allowed? | Yes, to **corporate subscribers** (limited companies, LLPs, public bodies). **Not** to sole traders or partnerships without consent. | Yes (opt-out model) | Only with consent. Implied consent can apply when the address is **conspicuously published**, there's no statement refusing messages, and the message is relevant to the person's business role. | Only with consent. Inferred consent can apply when the address is **conspicuously published**, there's no statement refusing messages, and the message is relevant to the role. |
+| Must identify sender | Yes | Yes, with accurate headers and a non-deceptive subject | Yes, with name and contact info | Yes |
+| Postal address in email | Recommended | **Required** (a valid physical postal address) | Required (mailing address plus another contact method) | Sender contact info required |
+| Unsubscribe | Simple opt-out in every message | Must work for 30 days; honour within 10 business days | Must work for 60 days; honour within 10 business days | Must be functional; honour within 5 business days |
+| Extra | UK GDPR: legitimate interests assessment; tell people where you got their data (a privacy notice link in the first email) | — | Heavy penalties | — |
+
+## 2. FlowHQ rules (enforced by the system, wherever it can enforce them)
+
+1. **Never invent or guess email addresses.** Every `contact_email` needs an `email_source_url` showing where the business published it. WF01 enforces this.
+2. **UK: verify corporate status** on Companies House before qualifying. WF02 enforces this as a hard gate.
+3. **Respect "no solicitation" statements** on websites. This is a hard gate.
+4. **Every email contains:** the sender's name, FlowHQ's legal name, a postal address, the reason we're contacting them, a simple opt-out ("reply unsubscribe"), and the privacy notice link. WF03's checks reject drafts that are missing any of these.
+5. **Honour opt-outs immediately.** Our target is the same day and at most 1 business day, which beats every country's deadline. Opt-outs suppress both the email and the domain, permanently.
+6. **One initial email per business.** No automated follow-ups in the MVP.
+7. **Accurate content.** No fake case studies, testimonials, or statistics, and no misleading subject lines. WF03 checks for some of this, and the human approver checks the rest.
+8. **No health or special-category data.** This is why healthcare is deferred.
+9. **Data minimisation and retention.** Store business contact data only. Delete or anonymise leads that never replied after 12 months (proposed). Keep the suppression list indefinitely, since it's needed to keep honouring opt-outs.
+10. **No deceptive research.** No fake enquiries and no mystery shopping.
+11. **Platform terms.** No scraping Google Maps, Rightmove, Zoopla, LinkedIn, or similar sites. Manual browsing and the free official Companies House API are fine.
+
+## 3. Documents FlowHQ needs before Phase 5 (sending)
+
+- [ ] A short **privacy notice** (who FlowHQ is, what data we hold, where it came from, why (legitimate interests), how long we keep it, how to object, and a contact address), published at a stable URL.
+- [ ] A one-page **Legitimate Interests Assessment** for UK outreach. I can draft a template in Phase 5.
+- [ ] FlowHQ's **legal name and postal address** for the email footer.
