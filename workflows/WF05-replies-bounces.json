@@ -1,0 +1,455 @@
+{
+  "name": "WF05 Replies & Bounces",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## WF05 Replies & Bounces (scheduled, every 15 minutes)\nReads the last 7 days of inbox mail (`in:inbox newer_than:7d -from:me`, read and unread), matches it to **real** sends by Gmail thread (bounces also by failed address), and:\n- opt-outs (keyword rules, never AI) → **Suppression** + stage **Unsubscribed**\n- bounces → **Suppression** (reason bounce)\n- other replies → **Replied**, `reply_category = needs_review` for you to read\n\nSuppressions are written before lead updates. Re-runs are idempotent (`reply_received_at` watermark, suppression dedupe).",
+        "height": 280,
+        "width": 760
+      },
+      "id": "924bc4bc-16a9-44a5-aea6-d2a5a45d0ced",
+      "name": "About WF05",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -60,
+        -440
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 15
+            }
+          ]
+        }
+      },
+      "id": "06e978ea-7664-4678-a77e-7a64f5f46ac4",
+      "name": "Every 15 Minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "e946da15-9b90-4030-a6d4-ad6ab4578cc0",
+              "name": "sheet_id",
+              "value": "PASTE_YOUR_GOOGLE_SHEET_ID_HERE",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "84a5945d-304e-4f3d-a024-c7002b00aeaf",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        220,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $('Config').first().json.sheet_id }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Leads",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "73f66a79-b158-4d8d-a9be-b84ee1372b15",
+      "name": "Read Leads",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        440,
+        0
+      ],
+      "executeOnce": true,
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $('Config').first().json.sheet_id }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Send_Log",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "a9243dc2-df82-451d-a5b1-1955d2a25d9d",
+      "name": "Read Send_Log",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        660,
+        0
+      ],
+      "executeOnce": true,
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $('Config').first().json.sheet_id }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Suppression",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "a3f2bcfa-5bb2-47e3-ac68-951287b8dd80",
+      "name": "Read Suppression",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        880,
+        0
+      ],
+      "executeOnce": true,
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "returnAll": false,
+        "limit": 100,
+        "simple": false,
+        "filters": {
+          "q": "in:inbox newer_than:7d -from:me",
+          "readStatus": "both"
+        },
+        "options": {}
+      },
+      "id": "5966aeef-ff12-45c1-a200-dcefe1fc582e",
+      "name": "Get Recent Messages",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        1100,
+        0
+      ],
+      "executeOnce": true,
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Generated from src/lib/common.js + src/wf05-replies-logic.js by scripts/build.js.\n// Do not edit here: edit the source, run `npm run build`, and re-import the workflow.\n\n// ===== src/lib/common.js =====\n\n// Shared helpers for every workflow's Code nodes.\n//\n// `npm run build` concatenates this file in front of each workflow module when it\n// embeds them into n8n Code nodes (the EXPORT tail is stripped), so everything\n// here must run unchanged inside n8n's Code-node sandbox: no `require`, no\n// Node-only globals, and plain JavaScript only.\n\n// Two-label public suffixes for the target countries. This is deliberately not\n// the full Public Suffix List; anything not listed is treated as a one-label suffix.\nconst MULTI_LABEL_SUFFIXES = new Set([\n  'co.uk', 'org.uk', 'me.uk', 'ltd.uk', 'plc.uk', 'net.uk', 'ac.uk', 'gov.uk', 'sch.uk', 'nhs.uk',\n  'com.au', 'net.au', 'org.au', 'id.au', 'asn.au',\n  'co.nz', 'org.nz', 'net.nz',\n  'ab.ca', 'bc.ca', 'mb.ca', 'nb.ca', 'nl.ca', 'ns.ca', 'nt.ca', 'nu.ca', 'on.ca', 'pe.ca', 'qc.ca', 'sk.ca', 'yk.ca',\n]);\n\n// Shared mailbox providers. A suppressed address at one of these must never\n// suppress every other user of the provider, and an agency using one gets a warning.\nconst FREE_MAIL_DOMAINS = new Set([\n  'gmail.com', 'googlemail.com', 'hotmail.com', 'hotmail.co.uk', 'outlook.com', 'live.com',\n  'live.co.uk', 'msn.com', 'yahoo.com', 'yahoo.co.uk', 'ymail.com', 'icloud.com', 'me.com',\n  'aol.com', 'aol.co.uk', 'btinternet.com', 'btopenworld.com', 'sky.com', 'virginmedia.com',\n  'talktalk.net', 'ntlworld.com', 'blueyonder.co.uk', 'mail.com', 'gmx.com', 'gmx.co.uk',\n  'protonmail.com', 'proton.me', 'zoho.com', 'bigpond.com', 'optusnet.com.au', 'shaw.ca',\n  'rogers.com', 'sympatico.ca',\n]);\n\n// Lead stages, exactly as in docs/02-mvp-architecture.md §4.\nconst STAGE = {\n  NEW: 'New Lead',\n  RESEARCHED: 'Researched',\n  QUALIFIED: 'Qualified',\n  DISQUALIFIED: 'Disqualified',\n  DRAFT_READY: 'Draft Ready',\n  APPROVED: 'Approved',\n  CONTACTED: 'Contacted',\n  REPLIED: 'Replied',\n  MEETING: 'Meeting Opportunity',\n  PROPOSAL: 'Proposal Sent',\n  WON: 'Won',\n  LOST: 'Lost',\n  UNSUBSCRIBED: 'Unsubscribed',\n};\n\nfunction text(value) {\n  if (value === null || value === undefined) return '';\n  return String(value).trim();\n}\n\nfunction isTrue(value) {\n  return value === true || text(value).toUpperCase() === 'TRUE';\n}\n\n// Returns the lower-cased hostname, or '' if the value is not a usable web address.\n// With requireScheme, bare domains like \"example.co.uk\" are rejected.\nfunction parseHost(value, { requireScheme = false } = {}) {\n  const raw = text(value);\n  if (!raw || /\\s/.test(raw)) return '';\n  const match = /^(?:(https?):\\/\\/)?([^/?#]+)(?:[/?#].*)?$/i.exec(raw);\n  if (!match) return '';\n  if (!match[1] && requireScheme) return '';\n  let authority = match[2];\n  if (authority.includes('@')) return '';\n  authority = authority.replace(/:\\d+$/, '');\n  const host = authority.toLowerCase().replace(/\\.$/, '');\n  if (!host.includes('.')) return '';\n  if (/^\\d{1,3}(?:\\.\\d{1,3}){3}$/.test(host)) return '';\n  const labels = host.split('.');\n  const labelOk = (l) => /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(l);\n  if (!labels.every(labelOk)) return '';\n  if (!/^[a-z]{2,63}$/.test(labels[labels.length - 1])) return '';\n  return host;\n}\n\nfunction registrableDomain(host) {\n  const h = text(host).toLowerCase().replace(/^www\\./, '');\n  if (!h) return '';\n  const labels = h.split('.');\n  if (labels.length <= 2) return h;\n  const lastTwo = labels.slice(-2).join('.');\n  return MULTI_LABEL_SUFFIXES.has(lastTwo) ? labels.slice(-3).join('.') : lastTwo;\n}\n\nfunction normaliseEmail(value) {\n  return text(value).replace(/^mailto:/i, '').replace(/\\?.*$/, '').trim().toLowerCase();\n}\n\nfunction isValidEmail(email) {\n  if (!email || email.length > 254) return false;\n  const at = email.lastIndexOf('@');\n  if (at < 1 || at !== email.indexOf('@')) return false;\n  const local = email.slice(0, at);\n  const domain = email.slice(at + 1);\n  if (local.length > 64) return false;\n  if (!/^[a-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\\.[a-z0-9!#$%&'*+/=?^_`{|}~-]+)*$/.test(local)) return false;\n  return domain !== '' && parseHost(domain) === domain;\n}\n\nfunction emailDomain(email) {\n  return email.slice(email.indexOf('@') + 1);\n}\n\n// Google Sheets may return a date cell as a serial day number (days since 1899-12-30).\nfunction normaliseDate(value) {\n  if (typeof value === 'number' && value > 20000 && value < 80000) {\n    return new Date(Date.UTC(1899, 11, 30) + value * 86400000).toISOString();\n  }\n  const raw = text(value);\n  if (!raw) return '';\n  return Number.isNaN(Date.parse(raw)) ? null : raw;\n}\n\n// Milliseconds since epoch for a timestamp cell, or NaN.\nfunction timeOf(value) {\n  const d = normaliseDate(value);\n  return d ? Date.parse(d) : NaN;\n}\n\nfunction parseSettings(settingsRows) {\n  const settings = {};\n  for (const row of settingsRows || []) {\n    const key = text(row && row.key);\n    if (key) settings[key] = row.value;\n  }\n  return settings;\n}\n\n// Fails closed: without a valid, active niche the calling workflow is aborted.\nfunction resolveActiveNiche(settings, nichesRows, action = 'import') {\n  const nicheId = text(settings.ACTIVE_NICHE);\n  if (!nicheId) throw new Error(`Settings.ACTIVE_NICHE is missing or blank; ${action} aborted.`);\n  const niche = (nichesRows || []).find((n) => n && text(n.niche_id) === nicheId);\n  if (!niche) throw new Error(`ACTIVE_NICHE \"${nicheId}\" has no row in the Niches tab; ${action} aborted.`);\n  if (!isTrue(niche.active)) throw new Error(`Niche \"${nicheId}\" is not active (Niches.active must be TRUE); ${action} aborted.`);\n  if (!text(niche.country)) throw new Error(`Niche \"${nicheId}\" has no country; ${action} aborted.`);\n  return { niche_id: nicheId, country: text(niche.country), row: niche };\n}\n\n// Suppression applies to the exact address and to the company domain, except\n// that shared mail providers are never suppressed at domain level (§3.4).\nfunction buildSuppressionIndex(suppressionRows) {\n  const suppressedEmails = new Set();\n  const suppressedDomains = new Set();\n  for (const row of suppressionRows || []) {\n    if (!row) continue;\n    const email = normaliseEmail(row.email);\n    if (email) {\n      suppressedEmails.add(email);\n      if (isValidEmail(email)) {\n        const d = registrableDomain(emailDomain(email));\n        if (!FREE_MAIL_DOMAINS.has(d)) suppressedDomains.add(d);\n      }\n    }\n    const domain = registrableDomain(parseHost(row.domain));\n    if (domain && !FREE_MAIL_DOMAINS.has(domain)) suppressedDomains.add(domain);\n  }\n  return { suppressedEmails, suppressedDomains };\n}\n\n// Returns '' when the contact may be used, otherwise a reason string.\nfunction suppressionReason(index, email, leadId) {\n  const e = normaliseEmail(email);\n  if (e && index.suppressedEmails.has(e)) return 'contact_email is on the Suppression list';\n  const lead = text(leadId).toLowerCase();\n  const mailDomain = e && e.includes('@') ? registrableDomain(emailDomain(e)) : '';\n  if ((lead && index.suppressedDomains.has(lead)) || (mailDomain && !FREE_MAIL_DOMAINS.has(mailDomain) && index.suppressedDomains.has(mailDomain))) {\n    return 'domain is on the Suppression list';\n  }\n  return '';\n}\n\n// Rows from a Sheets read, minus the empty {} item n8n emits for an empty tab.\nfunction realRows(rows) {\n  return (rows || []).filter((r) => r && Object.keys(r).length > 0);\n}\n\n// Calendar parts of an instant in an IANA time zone (Intl is available both in\n// Node and in the n8n Code-node sandbox; Luxon is not needed).\nfunction zonedParts(ms, timeZone) {\n  const fmt = new Intl.DateTimeFormat('en-GB', {\n    timeZone, weekday: 'short', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',\n  });\n  const parts = Object.fromEntries(fmt.formatToParts(new Date(ms)).map((p) => [p.type, p.value]));\n  return {\n    weekday: parts.weekday,\n    date: `${parts.year}-${parts.month}-${parts.day}`,\n    minutes: Number(parts.hour) * 60 + Number(parts.minute),\n  };\n}\n\nfunction isValidTimeZone(timeZone) {\n  try {\n    new Intl.DateTimeFormat('en-GB', { timeZone: text(timeZone) || 'invalid/zone' });\n    return true;\n  } catch (e) {\n    return false;\n  }\n}\n\nfunction clip(value, max) {\n  const s = text(value);\n  return s.length > max ? `${s.slice(0, max - 1)}…` : s;\n}\n\n// Evidence is stored in Leads.evidence as one line per item:  \"quote\" — url [signal]\nfunction formatEvidence(items) {\n  return (items || [])\n    .map((e) => `\"${text(e.quote).replace(/\"/g, \"'\")}\" — ${text(e.url)}${text(e.signal) ? ` [${text(e.signal)}]` : ''}`)\n    .join('\\n');\n}\n\nfunction parseEvidence(value) {\n  const out = [];\n  for (const line of text(value).split('\\n')) {\n    const m = /^\"(.*)\" — (\\S+)(?: \\[(.*)\\])?$/.exec(line.trim());\n    if (m) out.push({ quote: m[1], url: m[2], signal: m[3] || '' });\n  }\n  return out;\n}\n\n// Whole numbers 0..max written as digits (Sheets may return them as numbers).\nfunction parseIntSetting(value, min, max) {\n  const s = text(value);\n  if (!/^\\d+$/.test(s)) return NaN;\n  const n = Number(s);\n  return n >= min && n <= max ? n : NaN;\n}\n\n// Index of the input item an n8n output item came from (HTTP Request and Gmail\n// nodes replace an item's JSON, so later Code nodes recover context this way).\nfunction pairedIndex(item, fallback) {\n  const p = item && (Array.isArray(item.pairedItem) ? item.pairedItem[0] : item.pairedItem);\n  return p && typeof p.item === 'number' ? p.item : fallback;\n}\n\n// ===== src/wf05-replies-logic.js =====\n\n// WF05 Replies & Bounces: pure logic (docs/02-mvp-architecture.md §6).\n//\n// Embedded after common.js into the \"Classify Messages\" Code node of\n// workflows/WF05-replies-bounces.json. IMPORTS and the EXPORT tail are stripped.\n//\n// Matches recent inbox messages to real (non-test) sends via the Gmail thread ID\n// or, for bounces, the failed recipient address. Opt-outs and bounces are decided\n// by keyword rules only (no AI reads private replies) and are suppressed\n// immediately. Everything else is marked for a human to read.\n\n\n\nconst WF05_COLUMNS = ['lead_id', 'stage', 'reply_status', 'reply_received_at', 'reply_category', 'next_action', 'last_updated'];\n\nconst REPLY_STATUS = { REPLIED: 'replied', BOUNCED: 'bounced', UNSUBSCRIBED: 'unsubscribed', AUTO: 'auto_reply' };\nconst AUTO_CATEGORIES = new Set(['', 'needs_review', 'auto_reply', 'bounce', 'unsubscribe']);\n// Stages a human has moved the lead into; WF05 never overwrites them.\nconst SALES_STAGES = new Set([STAGE.MEETING, STAGE.PROPOSAL, STAGE.WON, STAGE.LOST]);\n\nconst OPT_OUT = /\\b(unsubscribe|remove me|take me off|opt[ -]?out|stop (?:emailing|contacting|sending|messaging)|do not (?:contact|email|e-mail)|don'?t (?:contact|email|e-mail)|no more (?:emails|e-mails|messages)|not interested,? (?:please )?(?:remove|stop))\\b/i;\nconst AUTO_REPLY_SUBJECT = /\\b(automatic reply|auto(?:matic)?[- ]?reply|out of (?:the )?office|away from (?:the|my) office|on (?:annual )?leave|autoreply|abwesenheit)\\b/i;\nconst BOUNCE_FROM = /(mailer-daemon|postmaster|mail delivery (?:subsystem|system))/i;\nconst BOUNCE_SUBJECT = /(delivery status notification|undeliverable|undelivered mail|delivery (?:has )?failed|failure notice|returned mail|mail delivery failed|could not be delivered)/i;\n\nfunction headerValue(message, name) {\n  const h = message.headers || {};\n  const raw = h[name] || h[name.toLowerCase()];\n  if (!raw) return '';\n  const line = Array.isArray(raw) ? raw.join(', ') : String(raw);\n  return line.replace(new RegExp(`^${name}\\\\s*:\\\\s*`, 'i'), '').trim();\n}\n\nfunction fromAddress(message) {\n  const f = message.from;\n  if (f && Array.isArray(f.value) && f.value[0]) return normaliseEmail(f.value[0].address);\n  const m = /[a-z0-9._%+-]+@[a-z0-9.-]+\\.[a-z]{2,}/i.exec(typeof f === 'string' ? f : (f && f.text) || '');\n  return m ? normaliseEmail(m[0]) : '';\n}\n\n// Only the newly written part of a reply: quoted history (which contains our own\n// footer and its \"unsubscribe\" wording) must never trigger an opt-out.\nfunction newContent(body) {\n  const lines = String(body || '').replace(/\\r\\n/g, '\\n').split('\\n');\n  const out = [];\n  for (const line of lines) {\n    const l = line.trim();\n    if (/^>/.test(l)) break;\n    if (/^On .{4,200}wrote:?$/i.test(l) || /^-{2,}\\s*Original Message\\s*-{2,}$/i.test(l) || /^_{10,}$/.test(l)) break;\n    if (/^(From|Sent|De|Von):\\s/i.test(l) && out.length) break;\n    if (/^(?:Le|Am) .{4,200}(?:a écrit|schrieb)\\s*:?$/i.test(l)) break;\n    out.push(line);\n  }\n  return out.join('\\n').trim();\n}\n\nfunction classifyMessage(message, sentEmails) {\n  const subject = text(message.subject);\n  const from = fromAddress(message);\n  if (BOUNCE_FROM.test(from) || BOUNCE_FROM.test(text(message.from && message.from.text)) || BOUNCE_SUBJECT.test(subject)) {\n    const failed = [];\n    const header = headerValue(message, 'X-Failed-Recipients');\n    for (const e of header.split(/[,\\s]+/)) if (isValidEmail(normaliseEmail(e))) failed.push(normaliseEmail(e));\n    if (!failed.length) {\n      for (const m of String(message.text || '').matchAll(/[a-z0-9._%+-]+@[a-z0-9.-]+\\.[a-z]{2,}/gi)) {\n        const e = normaliseEmail(m[0]);\n        if (sentEmails.has(e)) failed.push(e);\n      }\n    }\n    return { kind: 'bounce', failed: [...new Set(failed)] };\n  }\n  const autoSubmitted = headerValue(message, 'Auto-Submitted').toLowerCase();\n  if ((autoSubmitted && autoSubmitted !== 'no') || headerValue(message, 'X-Autoreply') || headerValue(message, 'X-Autorespond') || AUTO_REPLY_SUBJECT.test(subject)) {\n    return { kind: 'auto_reply' };\n  }\n  const fresh = newContent(message.text);\n  if (OPT_OUT.test(fresh) || /\\bunsubscribe\\b/i.test(subject.replace(/^\\s*(re|fw|fwd)\\s*:\\s*/i, ''))) return { kind: 'opt_out', from };\n  return { kind: 'reply', from };\n}\n\nfunction messageTime(message) {\n  const t = timeOf(message.date);\n  if (Number.isFinite(t)) return t;\n  const internal = Number(message.internalDate);\n  return Number.isFinite(internal) && internal > 0 ? internal : NaN;\n}\n\nfunction processMessages({ leadsRows, sendLogRows, suppressionRows, messages, now }) {\n  const ts = text(now) || new Date().toISOString();\n  const leads = realRows(leadsRows);\n  const leadById = new Map(leads.map((l) => [text(l.lead_id), l]));\n  const byThread = new Map();\n  const byEmail = new Map();\n  for (const row of realRows(sendLogRows)) {\n    if (text(row.status) !== 'sent') continue; // test sends are never matched\n    if (text(row.gmail_thread_id)) byThread.set(text(row.gmail_thread_id), text(row.lead_id));\n    if (text(row.to_email)) byEmail.set(normaliseEmail(row.to_email), text(row.lead_id));\n  }\n  const sentEmails = new Set(byEmail.keys());\n  const existing = buildSuppressionIndex(realRows(suppressionRows));\n  const alreadySuppressed = new Set(existing.suppressedEmails);\n\n  const state = new Map(); // lead_id -> working copy of WF05 columns\n  const suppressions = [];\n  const summary = { messages: 0, matched: 0, unmatched: 0, alreadyProcessed: 0, replies: 0, optOuts: 0, bounces: 0, autoReplies: 0 };\n\n  const working = (leadId) => {\n    if (!state.has(leadId)) {\n      const lead = leadById.get(leadId);\n      const row = {};\n      for (const c of WF05_COLUMNS) row[c] = lead[c] === undefined || lead[c] === null ? '' : lead[c];\n      state.set(leadId, { row, changed: false, watermark: timeOf(lead.reply_received_at) });\n    }\n    return state.get(leadId);\n  };\n  const suppress = (email, domain, reason, source) => {\n    const e = normaliseEmail(email);\n    if (!isValidEmail(e) || alreadySuppressed.has(e)) return;\n    alreadySuppressed.add(e);\n    suppressions.push({ email: e, domain: text(domain), reason, source, added_at: ts });\n  };\n\n  const sorted = realRows(messages)\n    .map((m) => ({ m, t: messageTime(m) }))\n    .sort((a, b) => (Number.isFinite(a.t) ? a.t : 0) - (Number.isFinite(b.t) ? b.t : 0));\n\n  for (const { m, t } of sorted) {\n    summary.messages += 1;\n    const c = classifyMessage(m, sentEmails);\n    let leadId = byThread.get(text(m.threadId)) || '';\n    if (!leadId && c.kind === 'bounce') leadId = c.failed.map((e) => byEmail.get(e)).find(Boolean) || '';\n    if (!leadId || !leadById.has(leadId)) { summary.unmatched += 1; continue; }\n    summary.matched += 1;\n    const w = working(leadId);\n    // Already handled in an earlier run (idempotency watermark).\n    if (Number.isFinite(t) && Number.isFinite(w.watermark) && t <= w.watermark) { summary.alreadyProcessed += 1; continue; }\n    const when = Number.isFinite(t) ? new Date(t).toISOString() : ts;\n    const lead = leadById.get(leadId);\n    const r = w.row;\n    const companyDomain = text(lead.lead_id);\n    const source = `gmail:${text(m.id)}`;\n\n    if (c.kind === 'bounce') {\n      summary.bounces += 1;\n      const failed = c.failed.length ? c.failed : [normaliseEmail(lead.contact_email)];\n      failed.forEach((e) => suppress(e, '', 'bounce', source));\n      if (r.reply_status !== REPLY_STATUS.UNSUBSCRIBED) {\n        r.reply_status = REPLY_STATUS.BOUNCED;\n        r.reply_category = 'bounce';\n        r.next_action = 'Email bounced: check the address before any further contact';\n      }\n    } else if (c.kind === 'opt_out') {\n      summary.optOuts += 1;\n      suppress(lead.contact_email, companyDomain, 'unsubscribe', source);\n      if (c.from && c.from !== normaliseEmail(lead.contact_email)) {\n        const d = registrableDomain(emailDomain(c.from));\n        suppress(c.from, FREE_MAIL_DOMAINS.has(d) ? '' : d, 'unsubscribe', source);\n      }\n      r.reply_status = REPLY_STATUS.UNSUBSCRIBED;\n      r.reply_category = 'unsubscribe';\n      if (SALES_STAGES.has(text(r.stage))) {\n        r.next_action = 'Opt-out received: stop all marketing; review the open opportunity by hand';\n      } else {\n        r.stage = STAGE.UNSUBSCRIBED;\n        r.next_action = 'Opt-out received: do not contact again';\n      }\n    } else if (c.kind === 'auto_reply') {\n      summary.autoReplies += 1;\n      // An auto-reply never overrides a real reply, bounce or opt-out.\n      if (!text(r.reply_status)) {\n        r.reply_status = REPLY_STATUS.AUTO;\n        r.reply_category = 'auto_reply';\n        r.next_action = 'Auto-reply received: no action needed';\n      }\n    } else {\n      summary.replies += 1;\n      if (r.reply_status !== REPLY_STATUS.UNSUBSCRIBED) {\n        r.reply_status = REPLY_STATUS.REPLIED;\n        if (AUTO_CATEGORIES.has(text(r.reply_category))) r.reply_category = 'needs_review';\n        r.next_action = 'Read the reply in Gmail, then set reply_category (positive / neutral / negative) and the next stage';\n        if (text(r.stage) === STAGE.CONTACTED) r.stage = STAGE.REPLIED;\n      }\n    }\n    r.reply_received_at = when;\n    r.last_updated = ts;\n    w.watermark = Number.isFinite(t) ? t : w.watermark;\n    w.changed = true;\n  }\n\n  const leadUpdates = [...state.values()].filter((w) => w.changed).map((w) => ({ ...w.row, next_action: clip(w.row.next_action, 300) }));\n  return { leadUpdates, suppressions, summary };\n}\n\n// ---- n8n glue ----\nconst rowsFrom = (nodeName) =>\n  $(nodeName).all().map((item) => item.json).filter((row) => row && Object.keys(row).length > 0);\nconst result = processMessages({\n  leadsRows: rowsFrom('Read Leads'),\n  sendLogRows: rowsFrom('Read Send_Log'),\n  suppressionRows: rowsFrom('Read Suppression'),\n  messages: rowsFrom('Get Recent Messages'),\n  now: new Date().toISOString(),\n});\nreturn [{ json: result }];"
+      },
+      "id": "4ee57d43-a47a-4369-ab64-f214d7e7b474",
+      "name": "Classify Messages",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1320,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "return $input.first().json.suppressions.map((json) => ({ json }));"
+      },
+      "id": "ee09441f-18f4-4cb4-a5ee-c7740ac8eac2",
+      "name": "New Suppressions",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1540,
+        -120
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $('Config').first().json.sheet_id }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Suppression",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {
+          "cellFormat": "RAW",
+          "handlingExtraData": "error"
+        }
+      },
+      "id": "d3c18b12-c481-4778-a876-94ac3523803e",
+      "name": "Append Suppression",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1760,
+        -120
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "return $('Classify Messages').first().json.leadUpdates.map((json) => ({ json }));"
+      },
+      "id": "603298fc-8f61-4bcf-aa63-4c9b8c19cb26",
+      "name": "Reply Updates",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1540,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $('Config').first().json.sheet_id }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Leads",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "lead_id": "={{ $json.lead_id }}",
+            "stage": "={{ $json.stage }}",
+            "reply_status": "={{ $json.reply_status }}",
+            "reply_received_at": "={{ $json.reply_received_at }}",
+            "reply_category": "={{ $json.reply_category }}",
+            "next_action": "={{ $json.next_action }}",
+            "last_updated": "={{ $json.last_updated }}"
+          },
+          "matchingColumns": [
+            "lead_id"
+          ],
+          "schema": [
+            {
+              "id": "lead_id",
+              "displayName": "lead_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "stage",
+              "displayName": "stage",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "reply_status",
+              "displayName": "reply_status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "reply_received_at",
+              "displayName": "reply_received_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "reply_category",
+              "displayName": "reply_category",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "next_action",
+              "displayName": "next_action",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "last_updated",
+              "displayName": "last_updated",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {
+          "cellFormat": "RAW"
+        }
+      },
+      "id": "90f1d525-e312-4575-a724-b874bee41583",
+      "name": "Update Leads (Replies)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1760,
+        120
+      ]
+    }
+  ],
+  "connections": {
+    "Every 15 Minutes": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Read Leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Leads": {
+      "main": [
+        [
+          {
+            "node": "Read Send_Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Send_Log": {
+      "main": [
+        [
+          {
+            "node": "Read Suppression",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Suppression": {
+      "main": [
+        [
+          {
+            "node": "Get Recent Messages",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Recent Messages": {
+      "main": [
+        [
+          {
+            "node": "Classify Messages",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Classify Messages": {
+      "main": [
+        [
+          {
+            "node": "New Suppressions",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Reply Updates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "New Suppressions": {
+      "main": [
+        [
+          {
+            "node": "Append Suppression",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reply Updates": {
+      "main": [
+        [
+          {
+            "node": "Update Leads (Replies)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true
+  },
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": []
+}

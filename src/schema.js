@@ -154,6 +154,9 @@ const SETTINGS_ROWS = [
   ['BUSINESS_POSTAL_ADDRESS', '', 'Required in the email footer.'],
   ['PRIVACY_URL', '', 'Shown in the email footer.'],
   ['WEBSITE_URL', '', 'Shown in the email footer.'],
+  // Added in Phase 3-7 (rows appended, no column changes): see docs/02 §3.1.
+  ['BUSINESS_LEGAL_NAME', '', "FlowHQ's registered legal name, required in every email footer (compliance rule 4)."],
+  ['LIVE_RECIPIENT_ALLOWLIST', '', 'Optional. When set, live sends go ONLY to these comma-separated addresses (Phase 7 testing). Clear it to go live.'],
 ];
 
 // Test 1 niche, from docs/01-strategy-icp-offer.md §8.

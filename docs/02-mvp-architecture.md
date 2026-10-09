@@ -59,6 +59,8 @@
 | `SENDER_NAME`, `SENDER_EMAIL` | — | Shown in the email. |
 | `BUSINESS_POSTAL_ADDRESS` | — | Required in the email footer. |
 | `PRIVACY_URL`, `WEBSITE_URL` | — | Shown in the email footer. |
+| `BUSINESS_LEGAL_NAME` | — | *(Added in Phase 4.)* FlowHQ's registered legal name. Required in every email footer by compliance rule 4. WF03 and WF04 refuse to work while it is blank. |
+| `LIVE_RECIPIENT_ALLOWLIST` | *(blank)* | *(Added in Phase 7.)* Optional. When it isn't blank, **live** sends go only to these comma-separated addresses, so the end-to-end test can use real FlowHQ-owned mailboxes without any risk of reaching a prospect. Clear it as part of go-live. |
 
 ### 3.2 `Niches` tab
 One row per niche. The fields are listed in `01-strategy-icp-offer.md` §8.

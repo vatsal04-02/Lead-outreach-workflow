@@ -1,0 +1,272 @@
+{
+  "name": "WF06 Daily Metrics",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## WF06 Daily Metrics (scheduled, daily 21:05 in the n8n time zone)\nWrites one **Metrics** row per day: cumulative totals as of that day (the difference between two rows is that period's activity). Re-running on the same day replaces that day's row.\n\n**Setup:** `sheet_id` and `metrics_timezone` in **Config**.",
+        "height": 200,
+        "width": 700
+      },
+      "id": "94b9e043-6e47-4c52-a288-9f0c96a408ce",
+      "name": "About WF06",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -60,
+        -340
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "days",
+              "daysInterval": 1,
+              "triggerAtHour": 21,
+              "triggerAtMinute": 5
+            }
+          ]
+        }
+      },
+      "id": "b5f4c784-aa17-4f70-a5d1-1e89360a4161",
+      "name": "Daily 21:05",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "42b93e6f-8e85-4dcf-a50a-18d6b24be44a",
+              "name": "sheet_id",
+              "value": "PASTE_YOUR_GOOGLE_SHEET_ID_HERE",
+              "type": "string"
+            },
+            {
+              "id": "8d263422-bec4-4110-a0f4-cd2b0cfc7cda",
+              "name": "metrics_timezone",
+              "value": "Asia/Kolkata",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "7286e8f1-4740-40b2-a8f5-98b08eaa3a8a",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        220,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $('Config').first().json.sheet_id }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Leads",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "52ede090-eefd-4493-a486-20bb571a7dde",
+      "name": "Read Leads",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        440,
+        0
+      ],
+      "executeOnce": true,
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $('Config').first().json.sheet_id }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Send_Log",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "dfcf7857-c7cd-4fda-a370-769345c125ca",
+      "name": "Read Send_Log",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        660,
+        0
+      ],
+      "executeOnce": true,
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $('Config').first().json.sheet_id }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Suppression",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "d9de3549-2663-40cb-a33e-9b707e5b03dc",
+      "name": "Read Suppression",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        880,
+        0
+      ],
+      "executeOnce": true,
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Generated from src/lib/common.js + src/wf06-metrics-logic.js by scripts/build.js.\n// Do not edit here: edit the source, run `npm run build`, and re-import the workflow.\n\n// ===== src/lib/common.js =====\n\n// Shared helpers for every workflow's Code nodes.\n//\n// `npm run build` concatenates this file in front of each workflow module when it\n// embeds them into n8n Code nodes (the EXPORT tail is stripped), so everything\n// here must run unchanged inside n8n's Code-node sandbox: no `require`, no\n// Node-only globals, and plain JavaScript only.\n\n// Two-label public suffixes for the target countries. This is deliberately not\n// the full Public Suffix List; anything not listed is treated as a one-label suffix.\nconst MULTI_LABEL_SUFFIXES = new Set([\n  'co.uk', 'org.uk', 'me.uk', 'ltd.uk', 'plc.uk', 'net.uk', 'ac.uk', 'gov.uk', 'sch.uk', 'nhs.uk',\n  'com.au', 'net.au', 'org.au', 'id.au', 'asn.au',\n  'co.nz', 'org.nz', 'net.nz',\n  'ab.ca', 'bc.ca', 'mb.ca', 'nb.ca', 'nl.ca', 'ns.ca', 'nt.ca', 'nu.ca', 'on.ca', 'pe.ca', 'qc.ca', 'sk.ca', 'yk.ca',\n]);\n\n// Shared mailbox providers. A suppressed address at one of these must never\n// suppress every other user of the provider, and an agency using one gets a warning.\nconst FREE_MAIL_DOMAINS = new Set([\n  'gmail.com', 'googlemail.com', 'hotmail.com', 'hotmail.co.uk', 'outlook.com', 'live.com',\n  'live.co.uk', 'msn.com', 'yahoo.com', 'yahoo.co.uk', 'ymail.com', 'icloud.com', 'me.com',\n  'aol.com', 'aol.co.uk', 'btinternet.com', 'btopenworld.com', 'sky.com', 'virginmedia.com',\n  'talktalk.net', 'ntlworld.com', 'blueyonder.co.uk', 'mail.com', 'gmx.com', 'gmx.co.uk',\n  'protonmail.com', 'proton.me', 'zoho.com', 'bigpond.com', 'optusnet.com.au', 'shaw.ca',\n  'rogers.com', 'sympatico.ca',\n]);\n\n// Lead stages, exactly as in docs/02-mvp-architecture.md §4.\nconst STAGE = {\n  NEW: 'New Lead',\n  RESEARCHED: 'Researched',\n  QUALIFIED: 'Qualified',\n  DISQUALIFIED: 'Disqualified',\n  DRAFT_READY: 'Draft Ready',\n  APPROVED: 'Approved',\n  CONTACTED: 'Contacted',\n  REPLIED: 'Replied',\n  MEETING: 'Meeting Opportunity',\n  PROPOSAL: 'Proposal Sent',\n  WON: 'Won',\n  LOST: 'Lost',\n  UNSUBSCRIBED: 'Unsubscribed',\n};\n\nfunction text(value) {\n  if (value === null || value === undefined) return '';\n  return String(value).trim();\n}\n\nfunction isTrue(value) {\n  return value === true || text(value).toUpperCase() === 'TRUE';\n}\n\n// Returns the lower-cased hostname, or '' if the value is not a usable web address.\n// With requireScheme, bare domains like \"example.co.uk\" are rejected.\nfunction parseHost(value, { requireScheme = false } = {}) {\n  const raw = text(value);\n  if (!raw || /\\s/.test(raw)) return '';\n  const match = /^(?:(https?):\\/\\/)?([^/?#]+)(?:[/?#].*)?$/i.exec(raw);\n  if (!match) return '';\n  if (!match[1] && requireScheme) return '';\n  let authority = match[2];\n  if (authority.includes('@')) return '';\n  authority = authority.replace(/:\\d+$/, '');\n  const host = authority.toLowerCase().replace(/\\.$/, '');\n  if (!host.includes('.')) return '';\n  if (/^\\d{1,3}(?:\\.\\d{1,3}){3}$/.test(host)) return '';\n  const labels = host.split('.');\n  const labelOk = (l) => /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(l);\n  if (!labels.every(labelOk)) return '';\n  if (!/^[a-z]{2,63}$/.test(labels[labels.length - 1])) return '';\n  return host;\n}\n\nfunction registrableDomain(host) {\n  const h = text(host).toLowerCase().replace(/^www\\./, '');\n  if (!h) return '';\n  const labels = h.split('.');\n  if (labels.length <= 2) return h;\n  const lastTwo = labels.slice(-2).join('.');\n  return MULTI_LABEL_SUFFIXES.has(lastTwo) ? labels.slice(-3).join('.') : lastTwo;\n}\n\nfunction normaliseEmail(value) {\n  return text(value).replace(/^mailto:/i, '').replace(/\\?.*$/, '').trim().toLowerCase();\n}\n\nfunction isValidEmail(email) {\n  if (!email || email.length > 254) return false;\n  const at = email.lastIndexOf('@');\n  if (at < 1 || at !== email.indexOf('@')) return false;\n  const local = email.slice(0, at);\n  const domain = email.slice(at + 1);\n  if (local.length > 64) return false;\n  if (!/^[a-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\\.[a-z0-9!#$%&'*+/=?^_`{|}~-]+)*$/.test(local)) return false;\n  return domain !== '' && parseHost(domain) === domain;\n}\n\nfunction emailDomain(email) {\n  return email.slice(email.indexOf('@') + 1);\n}\n\n// Google Sheets may return a date cell as a serial day number (days since 1899-12-30).\nfunction normaliseDate(value) {\n  if (typeof value === 'number' && value > 20000 && value < 80000) {\n    return new Date(Date.UTC(1899, 11, 30) + value * 86400000).toISOString();\n  }\n  const raw = text(value);\n  if (!raw) return '';\n  return Number.isNaN(Date.parse(raw)) ? null : raw;\n}\n\n// Milliseconds since epoch for a timestamp cell, or NaN.\nfunction timeOf(value) {\n  const d = normaliseDate(value);\n  return d ? Date.parse(d) : NaN;\n}\n\nfunction parseSettings(settingsRows) {\n  const settings = {};\n  for (const row of settingsRows || []) {\n    const key = text(row && row.key);\n    if (key) settings[key] = row.value;\n  }\n  return settings;\n}\n\n// Fails closed: without a valid, active niche the calling workflow is aborted.\nfunction resolveActiveNiche(settings, nichesRows, action = 'import') {\n  const nicheId = text(settings.ACTIVE_NICHE);\n  if (!nicheId) throw new Error(`Settings.ACTIVE_NICHE is missing or blank; ${action} aborted.`);\n  const niche = (nichesRows || []).find((n) => n && text(n.niche_id) === nicheId);\n  if (!niche) throw new Error(`ACTIVE_NICHE \"${nicheId}\" has no row in the Niches tab; ${action} aborted.`);\n  if (!isTrue(niche.active)) throw new Error(`Niche \"${nicheId}\" is not active (Niches.active must be TRUE); ${action} aborted.`);\n  if (!text(niche.country)) throw new Error(`Niche \"${nicheId}\" has no country; ${action} aborted.`);\n  return { niche_id: nicheId, country: text(niche.country), row: niche };\n}\n\n// Suppression applies to the exact address and to the company domain, except\n// that shared mail providers are never suppressed at domain level (§3.4).\nfunction buildSuppressionIndex(suppressionRows) {\n  const suppressedEmails = new Set();\n  const suppressedDomains = new Set();\n  for (const row of suppressionRows || []) {\n    if (!row) continue;\n    const email = normaliseEmail(row.email);\n    if (email) {\n      suppressedEmails.add(email);\n      if (isValidEmail(email)) {\n        const d = registrableDomain(emailDomain(email));\n        if (!FREE_MAIL_DOMAINS.has(d)) suppressedDomains.add(d);\n      }\n    }\n    const domain = registrableDomain(parseHost(row.domain));\n    if (domain && !FREE_MAIL_DOMAINS.has(domain)) suppressedDomains.add(domain);\n  }\n  return { suppressedEmails, suppressedDomains };\n}\n\n// Returns '' when the contact may be used, otherwise a reason string.\nfunction suppressionReason(index, email, leadId) {\n  const e = normaliseEmail(email);\n  if (e && index.suppressedEmails.has(e)) return 'contact_email is on the Suppression list';\n  const lead = text(leadId).toLowerCase();\n  const mailDomain = e && e.includes('@') ? registrableDomain(emailDomain(e)) : '';\n  if ((lead && index.suppressedDomains.has(lead)) || (mailDomain && !FREE_MAIL_DOMAINS.has(mailDomain) && index.suppressedDomains.has(mailDomain))) {\n    return 'domain is on the Suppression list';\n  }\n  return '';\n}\n\n// Rows from a Sheets read, minus the empty {} item n8n emits for an empty tab.\nfunction realRows(rows) {\n  return (rows || []).filter((r) => r && Object.keys(r).length > 0);\n}\n\n// Calendar parts of an instant in an IANA time zone (Intl is available both in\n// Node and in the n8n Code-node sandbox; Luxon is not needed).\nfunction zonedParts(ms, timeZone) {\n  const fmt = new Intl.DateTimeFormat('en-GB', {\n    timeZone, weekday: 'short', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',\n  });\n  const parts = Object.fromEntries(fmt.formatToParts(new Date(ms)).map((p) => [p.type, p.value]));\n  return {\n    weekday: parts.weekday,\n    date: `${parts.year}-${parts.month}-${parts.day}`,\n    minutes: Number(parts.hour) * 60 + Number(parts.minute),\n  };\n}\n\nfunction isValidTimeZone(timeZone) {\n  try {\n    new Intl.DateTimeFormat('en-GB', { timeZone: text(timeZone) || 'invalid/zone' });\n    return true;\n  } catch (e) {\n    return false;\n  }\n}\n\nfunction clip(value, max) {\n  const s = text(value);\n  return s.length > max ? `${s.slice(0, max - 1)}…` : s;\n}\n\n// Evidence is stored in Leads.evidence as one line per item:  \"quote\" — url [signal]\nfunction formatEvidence(items) {\n  return (items || [])\n    .map((e) => `\"${text(e.quote).replace(/\"/g, \"'\")}\" — ${text(e.url)}${text(e.signal) ? ` [${text(e.signal)}]` : ''}`)\n    .join('\\n');\n}\n\nfunction parseEvidence(value) {\n  const out = [];\n  for (const line of text(value).split('\\n')) {\n    const m = /^\"(.*)\" — (\\S+)(?: \\[(.*)\\])?$/.exec(line.trim());\n    if (m) out.push({ quote: m[1], url: m[2], signal: m[3] || '' });\n  }\n  return out;\n}\n\n// Whole numbers 0..max written as digits (Sheets may return them as numbers).\nfunction parseIntSetting(value, min, max) {\n  const s = text(value);\n  if (!/^\\d+$/.test(s)) return NaN;\n  const n = Number(s);\n  return n >= min && n <= max ? n : NaN;\n}\n\n// Index of the input item an n8n output item came from (HTTP Request and Gmail\n// nodes replace an item's JSON, so later Code nodes recover context this way).\nfunction pairedIndex(item, fallback) {\n  const p = item && (Array.isArray(item.pairedItem) ? item.pairedItem[0] : item.pairedItem);\n  return p && typeof p.item === 'number' ? p.item : fallback;\n}\n\n// ===== src/wf06-metrics-logic.js =====\n\n// WF06 Daily Metrics: pure logic (docs/02-mvp-architecture.md §8).\n//\n// Each Metrics row is a snapshot of cumulative totals on its date; the change\n// between two rows is that period's activity. Re-running on the same day\n// replaces that day's row (append-or-update on `date`), so it is idempotent.\n\n\n\nconst QUALIFIED_OR_LATER = new Set([\n  STAGE.QUALIFIED, STAGE.DRAFT_READY, STAGE.APPROVED, STAGE.CONTACTED, STAGE.REPLIED,\n  STAGE.MEETING, STAGE.PROPOSAL, STAGE.WON, STAGE.LOST, STAGE.UNSUBSCRIBED,\n]);\nconst RESEARCHED_OR_LATER = new Set([...QUALIFIED_OR_LATER, STAGE.RESEARCHED, STAGE.DISQUALIFIED]);\n\nfunction ratio(n, d) {\n  return d > 0 ? Math.round((n / d) * 1000) / 1000 : '';\n}\n\nfunction computeMetrics({ leadsRows, sendLogRows, suppressionRows, now, timeZone }) {\n  const tz = text(timeZone);\n  if (!isValidTimeZone(tz)) throw new Error(`metrics_timezone \"${tz}\" in the Config node is not a valid IANA time zone.`);\n  const ms = Date.parse(text(now) || new Date().toISOString());\n  const leads = realRows(leadsRows);\n  const stage = (l) => text(l.stage);\n  const count = (pred) => leads.filter(pred).length;\n  const uniqueEmails = (reason) => new Set(realRows(suppressionRows).filter((r) => text(r.reason) === reason).map((r) => normaliseEmail(r.email)).filter(Boolean)).size;\n\n  const qualified = count((l) => QUALIFIED_OR_LATER.has(stage(l)));\n  const researched = count((l) => RESEARCHED_OR_LATER.has(stage(l)));\n  const emailsSent = realRows(sendLogRows).filter((r) => text(r.status) === 'sent').length;\n  const bounces = uniqueEmails('bounce');\n\n  return {\n    date: zonedParts(ms, tz).date,\n    new_leads: leads.length,\n    qualified,\n    qualification_rate: ratio(qualified, researched),\n    drafts_approved: count((l) => text(l.approval_status) === 'Approved'),\n    drafts_rejected: count((l) => text(l.approval_status) === 'Rejected'),\n    emails_sent: emailsSent,\n    bounces,\n    bounce_rate: ratio(bounces, emailsSent),\n    unsubscribes: uniqueEmails('unsubscribe'),\n    replies: count((l) => ['replied', 'unsubscribed'].includes(text(l.reply_status))),\n    positive_replies: count((l) => text(l.reply_category) === 'positive'),\n    meetings_booked: count((l) => [STAGE.MEETING, STAGE.PROPOSAL, STAGE.WON].includes(stage(l))),\n    proposals_sent: count((l) => [STAGE.PROPOSAL, STAGE.WON].includes(stage(l))),\n    clients_won: count((l) => stage(l) === STAGE.WON),\n    // The Leads tab has no deal-value column, so this stays blank until one is agreed.\n    won_value: '',\n  };\n}\n\n// ---- n8n glue ----\nconst rowsFrom = (nodeName) =>\n  $(nodeName).all().map((item) => item.json).filter((row) => row && Object.keys(row).length > 0);\nreturn [{ json: computeMetrics({\n  leadsRows: rowsFrom('Read Leads'),\n  sendLogRows: rowsFrom('Read Send_Log'),\n  suppressionRows: rowsFrom('Read Suppression'),\n  now: new Date().toISOString(),\n  timeZone: $('Config').first().json.metrics_timezone,\n}) }];"
+      },
+      "id": "ebcdd402-838c-4e01-aa82-fb3a81e81438",
+      "name": "Compute Metrics",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $('Config').first().json.sheet_id }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Metrics",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [
+            "date"
+          ],
+          "schema": []
+        },
+        "options": {
+          "cellFormat": "RAW",
+          "handlingExtraData": "error"
+        }
+      },
+      "id": "423aa14d-c737-44f2-a79c-3f9dc1601613",
+      "name": "Write Metrics",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1320,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Daily 21:05": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Read Leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Leads": {
+      "main": [
+        [
+          {
+            "node": "Read Send_Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Send_Log": {
+      "main": [
+        [
+          {
+            "node": "Read Suppression",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Suppression": {
+      "main": [
+        [
+          {
+            "node": "Compute Metrics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compute Metrics": {
+      "main": [
+        [
+          {
+            "node": "Write Metrics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true
+  },
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": []
+}
