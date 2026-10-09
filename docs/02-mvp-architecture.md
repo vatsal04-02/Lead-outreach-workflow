@@ -93,6 +93,23 @@ One row per niche. The fields are listed in `01-strategy-icp-offer.md` §8.
 | `reply_status`, `reply_received_at`, `reply_category` | WF05 / human | |
 | `next_action`, `next_action_due`, `notes` | Human | |
 | `last_updated`, `last_error` | All | |
+| `registry_country` | WF02 | *(Added for multi-country registry checks.)* The ISO code used for routing (`GB`, `US`, `IN`, …), taken from the lead's `country` (`UK` → `GB`). |
+| `registry_provider` | WF02 | The adapter used: `companies_house`, `us_state_registry`, `mca_india`, `manual`, or `none`. |
+| `registry_status` | WF02 / human | `VERIFIED`, `INELIGIBLE` (the registry record found by company number says it isn't active or isn't an eligible type), `UNVERIFIED` (unsupported country, adapter not live, API failure, no match, ambiguous match or insufficient evidence; **never** read as "doesn't exist"), or `MANUAL_VERIFIED` (set by a human). |
+| `registry_source_url` | WF02 / human | The official page for the record or search. |
+| `registry_checked_at` | WF02 | When the lookup was evaluated. |
+| `registry_match_rationale` | WF02 / human | How the record was matched, or why it couldn't be. |
+
+**Registry verification is separate from website evidence.** `evidence` holds only verbatim website quotes; `registry_*` and `company_*` hold only official-registry results. The router (`src/lib/registries.js`) picks an adapter by country:
+
+| Country | Provider | Live? |
+|---|---|---|
+| GB | Companies House public data API | **Yes** (needs a free API key). Stubbed in tests; not yet run against the real API. |
+| US | Per-state registries | **No.** Designed only. No official source or credentials are confirmed, so the result is always `UNVERIFIED`. |
+| IN | Ministry of Corporate Affairs (MCA) | **No.** Designed only. No official access or credentials are confirmed, so the result is always `UNVERIFIED`. |
+| any other | — | No adapter, so the result is `UNVERIFIED`. |
+
+When the active niche's `legal_entity_required` isn't blank or `none`, a lead qualifies only with `VERIFIED` or `MANUAL_VERIFIED`; `UNVERIFIED` sends it to `Researched` for a manual check. `INELIGIBLE` always disqualifies. A human records a manual check by setting `registry_status = MANUAL_VERIFIED` together with an http(s) `registry_source_url` and a `registry_match_rationale`; WF02 then keeps those values.
 
 ### 3.4 `Suppression` tab
 `email`, `domain`, `reason` (`unsubscribe` / `bounce` / `complaint` / `manual` / `no_solicitation_notice`), `source`, `added_at`.

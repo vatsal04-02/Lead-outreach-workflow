@@ -96,6 +96,14 @@ const TABS = {
     'notes',
     'last_updated',
     'last_error',
+    // Company-registry verification (WF02), appended in the multi-country
+    // registry change; see docs/02 §3.3 and src/lib/registries.js.
+    'registry_country',
+    'registry_provider',
+    'registry_status',
+    'registry_source_url',
+    'registry_checked_at',
+    'registry_match_rationale',
   ],
 
   Suppression: ['email', 'domain', 'reason', 'source', 'added_at'],

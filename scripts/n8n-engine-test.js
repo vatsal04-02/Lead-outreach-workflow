@@ -39,9 +39,17 @@ let runCounter = 0;
 // ---------- fake Google Sheet ----------
 
 class FakeSheet {
-  constructor(initial = {}) {
+  // `headers` can override a tab's header row, e.g. to model a Leads tab that
+  // hasn't been migrated yet. Like Google Sheets, updates to columns missing from
+  // the header are silently dropped.
+  constructor(initial = {}, headers = {}) {
+    this.headers = { ...TABS, ...headers };
     this.tabs = {};
     for (const tab of Object.keys(TABS)) this.tabs[tab] = (initial[tab] || []).map((r) => this.blank(tab, r));
+  }
+
+  headerRow(tab) {
+    return Object.fromEntries(this.headers[tab].map((h) => [h, h]));
   }
 
   blank(tab, row = {}) {
@@ -79,7 +87,7 @@ class FakeSheet {
       for (const item of items) {
         const row = key === 'row_number' ? this.tabs[tab][Number(item.row_number) - 2] : this.tabs[tab].find((r) => String(r[key]) === String(item[key]));
         if (!row) continue; // Sheets skips keys it can't find
-        for (const c of cols) row[c] = asCell(item[c]);
+        for (const c of cols) if (this.headers[tab].includes(c)) row[c] = asCell(item[c]);
       }
       return;
     }
@@ -137,6 +145,11 @@ function variant(file, sheet, opts = {}) {
   const nodes = wf.nodes.map((n) => {
     if (n.type === 'n8n-nodes-base.scheduleTrigger' || n.type === 'n8n-nodes-base.errorTrigger') {
       return { parameters: {}, id: n.id, name: n.name, type: 'n8n-nodes-base.manualTrigger', typeVersion: 1, position: n.position };
+    }
+    if (isRead(n) && n.parameters.options && n.parameters.options.dataLocationOnSheet) {
+      // Header read (header row 1 = first data row): the header comes back as an item.
+      const tab = n.parameters.sheetName.value;
+      return stub(n, emit([{ row_number: 1, ...sheet.headerRow(tab) }, ...sheet.rows(tab)]));
     }
     if (isRead(n)) {
       const tab = n.parameters.sheetName.value;
@@ -391,6 +404,13 @@ check('E2E 2/9 WF02: research qualifies, disqualifies, and records failures with
   const alpha = e2e.lead('alpha-lettings.example');
   assert.equal(alpha.stage, 'Qualified', alpha.disqualify_reason || alpha.last_error);
   assert.equal(alpha.company_number, '09990001');
+  assert.equal(alpha.registry_status, 'VERIFIED');
+  assert.equal(alpha.registry_country, 'GB');
+  assert.equal(alpha.registry_provider, 'companies_house');
+  assert.equal(alpha.registry_source_url, 'https://find-and-update.company-information.service.gov.uk/company/09990001');
+  assert.ok(alpha.registry_checked_at);
+  assert.match(alpha.registry_match_rationale, /company number 09990001/);
+  assert.ok(!/companies house/i.test(alpha.evidence), 'registry data never enters website evidence');
   assert.equal(alpha.contact_name, 'Ada Example');
   assert.equal(alpha.problem_score, 3);
   assert.ok(!alpha.evidence.includes('We lose most weekend enquiries'), 'invented quote must be dropped');
@@ -398,15 +418,49 @@ check('E2E 2/9 WF02: research qualifies, disqualifies, and records failures with
   const beta = e2e.lead('beta-estates.example');
   assert.equal(beta.stage, 'New Lead');
   assert.match(beta.last_error, /Website fetch failed/);
+  assert.equal(beta.registry_status, 'UNVERIFIED'); // registry lookup failed too: recorded, not inferred
   const gamma = e2e.lead('gamma-homes.example');
   assert.equal(gamma.stage, 'Disqualified');
   assert.match(gamma.disqualify_reason, /dissolved/);
+  assert.equal(gamma.registry_status, 'INELIGIBLE');
   const delta = e2e.lead('delta-property.example');
   assert.equal(delta.stage, 'Disqualified');
   assert.match(delta.disqualify_reason, /Suppressed/);
   // Only alpha reached Gemini; no request was made for skipped leads.
   const gemIn = r.out('Build AI Requests').filter((i) => i.request_url);
   assert.deepEqual(gemIn.map((i) => i.lead_id), ['alpha-lettings.example']);
+});
+
+check('WF02 refuses to run on a Leads tab without the registry columns (nothing written)', () => {
+  const oldHeaders = TABS.Leads.filter((c) => !c.startsWith('registry_'));
+  const sheet = new FakeSheet({ Settings: settingsBase, Niches: NICHE_ROWS, Leads: [{ lead_id: 'omega.example', niche_id: 'uk-estate-letting', country: 'UK', company_name: 'Omega Ltd', website: 'https://omega.example', contact_email: 'info@omega.example', stage: 'New Lead' }] }, { Leads: oldHeaders });
+  const r = execute('WF02-research-qualify.json', sheet, { http: WF02_HTTP });
+  assert.equal(r.ok, false);
+  assert.match(r.error, /missing columns: registry_country.*registry_match_rationale/);
+  assert.equal(sheet.lead('omega.example').stage, 'New Lead');
+  assert.equal(r.out('Fetch Homepage'), null, 'no website was fetched');
+});
+
+check('WF02: US and IN leads are routed to non-live adapters and never hit Companies House', () => {
+  const sheet = new FakeSheet({
+    Settings: settingsBase,
+    Niches: NICHE_ROWS,
+    Leads: [
+      { lead_id: 'us-agency.example', niche_id: 'uk-estate-letting', country: 'US', company_name: 'US Agency LLC', website: 'https://us-agency.example', contact_email: 'info@us-agency.example', stage: 'New Lead' },
+      { lead_id: 'in-agency.example', niche_id: 'uk-estate-letting', country: 'IN', company_name: 'IN Agency Pvt Ltd', website: 'https://in-agency.example', contact_email: 'info@in-agency.example', stage: 'New Lead' },
+    ],
+  });
+  const http = { ...WF02_HTTP, 'Fetch Homepage': { byUrl: { 'https://us-agency.example': { data: '<p>Hello</p>' }, 'https://in-agency.example': { data: '<p>Hello</p>' } } } };
+  const r = execute('WF02-research-qualify.json', sheet, { http });
+  assert.ok(r.ok, r.error);
+  const chCalls = (r.out('Build AI Requests') || []).map((i) => i.ch_request_url).filter(Boolean);
+  assert.deepEqual(chCalls, [], 'Companies House must not be called for US/IN');
+  for (const [id, provider] of [['us-agency.example', 'us_state_registry'], ['in-agency.example', 'mca_india']]) {
+    const l = sheet.lead(id);
+    assert.equal(l.registry_status, 'UNVERIFIED', id);
+    assert.equal(l.registry_provider, provider);
+    assert.equal(l.stage, 'Researched', 'this niche requires a verified legal entity');
+  }
 });
 
 check('E2E 3/9 WF02 re-run: only the failed lead is retried', () => {

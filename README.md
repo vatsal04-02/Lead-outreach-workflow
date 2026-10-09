@@ -20,8 +20,8 @@ FlowHQ's internal business-development system. It finds relevant businesses, exp
 | 7 | Controlled end-to-end test | ✅ stubbed chain + live procedure | ✅ | ❌ |
 
 Automated results:
-- `npm test`: **137/137**.
-- n8n engine harness: **22/22 on n8n 2.41.6 and 2.42.6** (imports every workflow and chains WF01→WF06).
+- `npm test`: **154/154**.
+- n8n engine harness: **24/24 on n8n 2.41.6 and 2.42.6** (imports every workflow, chains WF01→WF06, and checks WF02's registry routing and its refusal to run on an un-migrated Leads tab).
 
 Details are in [`docs/00-implementation-checklist.md`](docs/00-implementation-checklist.md).
 
@@ -31,7 +31,7 @@ Details are in [`docs/00-implementation-checklist.md`](docs/00-implementation-ch
 |---|---|---|
 | `workflows/WF00-error-handler.json` | Error | Errors tab + alert email |
 | `workflows/WF01-import-dedupe.json` | Manual | Import → validated, deduplicated `New Lead` rows |
-| `workflows/WF02-research-qualify.json` | Manual | Website + Companies House + Gemini → Qualified / Disqualified / Researched |
+| `workflows/WF02-research-qualify.json` | Manual | Website evidence + company registry routed by country (GB live; US/IN designed, not live) + Gemini → Qualified / Disqualified / Researched |
 | `workflows/WF03-draft-generation.json` | Manual | Template draft + one checked AI sentence → `Draft Ready` |
 | *(human)* | — | Approve in the Sheet |
 | `workflows/WF04-approved-sender.json` | Every 10 min | At most one approved email per run, behind every safety gate |

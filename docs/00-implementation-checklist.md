@@ -27,7 +27,7 @@
 | 1 Strategy | Niche, ICP, offer, architecture documented; decisions D1–D7 made by FlowHQ | Docs only | n/a | **No.** Decisions are open. |
 | 1b Smoke test | ≥12/20 with email + limited company, ≥8/20 with a citable signal, all verified | Template + 22 candidates + procedure | n/a | **No. 0/20 verified** (page fetching blocked here) |
 | 2 Sheet + import | Tabs match schema; WF01 validates, dedupes, suppresses and is idempotent; WF00 logs and alerts | Yes | Yes (unit + engine on 2.41.6 and 2.42.6) | **No** (`07` T1–T7 pending) |
-| 3 Research & qualify | WF02 qualifies only on verified quotes and Companies House; failures don't lose data or block the queue | Yes | Yes | **No** (needs CH + Gemini keys; `09` §5) |
+| 3 Research & qualify | WF02 qualifies only on verified quotes and a verified registry record (when the niche requires one); registry routed by country; failures don't lose data or block the queue | Yes (GB live; US/IN adapters designed, **not live**) | Yes | **No** (needs CH + Gemini keys; `09` §5) |
 | 4 Drafts | WF03 drafts pass the honesty and compliance checks; human edits are re-checked | Yes | Yes | **No** |
 | 5 Approval + sending | Human approval; WF04 enforces every gate; test-mode redirect; no duplicates; failures logged and alerted | Yes | Yes | **No** (Gmail OAuth broken) |
 | 6 Replies, suppression, reporting | WF05 opt-outs/bounces → Suppression first, idempotent; WF06 daily snapshot | Yes | Yes | **No** |
@@ -59,6 +59,8 @@
 | D9 | Test-mode behaviour | `send_status = TestSent` (a new value), stage stays `Approved`, never re-picked, never counted as contact; WF05 ignores test sends. |
 | D10 | "Instant" wording | The template says "within minutes" (the triggers poll); "instant" is a banned phrase in FlowHQ's own wording. |
 | D11 | `Disqualified` stage (from Phase 1) | Used by WF02. |
+| D12 | US and India registry sources | Adapters are designed but not live. To make one live, FlowHQ must confirm an official source (US: the specific state registries; India: MCA data access), its terms, and credentials. Until then those leads are `UNVERIFIED` (use `MANUAL_VERIFIED` after a manual check). |
+| D13 | Leads schema migration | Six `registry_*` columns are appended at the end of Leads. WF02 refuses to run on a Sheet that hasn't been migrated. |
 
 ## 5. Interpretations made where the architecture was silent
 

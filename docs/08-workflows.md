@@ -39,7 +39,8 @@ Approval (Phase 5) is **done by a human** in the Sheet, not by a workflow. Autom
 | Google Sheets API | all | Google Sheets OAuth2 API | **No.** Stubbed in tests. |
 | Gmail API (send) | WF00, WF04 | Gmail OAuth2 API | **No.** Your Gmail OAuth is currently broken, and Gmail was stubbed. |
 | Gmail API (read) | WF05 | Gmail OAuth2 API | **No.** Stubbed. |
-| Companies House public data API (free) | WF02 | Basic Auth (API key as user, blank password) | **No.** Stubbed (and the host is blocked in the build environment). |
+| Companies House public data API (free) | WF02 (GB leads only) | Basic Auth (API key as user, blank password) | **No.** Stubbed (and the host is blocked in the build environment). |
+| US / India company registries | WF02 adapters (designed only) | none configured | **Not live.** No official source or credentials confirmed; never queried. |
 | Google Gemini API (free tier) | WF02, WF03 | Header Auth, `x-goog-api-key` | **No.** Stubbed. |
 | Prospect websites | WF02 | none | **No.** Stubbed. |
 
@@ -67,12 +68,25 @@ Approval (Phase 5) is **done by a human** in the Sheet, not by a workflow. Autom
 - **Tests:** `tests/wf01-import-logic.test.js`, engine "WF01 …".
 
 ### WF02 Research & Qualify
-- **Inputs:** `Settings` (`RESEARCH_BATCH_SIZE`, `MIN_QUALIFY_SCORE`, `ACTIVE_NICHE`), `Niches`, `Leads` (stage `New Lead`), `Suppression`; the website; Companies House; Gemini.
-- **Outputs (Leads, matched on `lead_id`):** `company_number, company_status, legal_entity_type, stage, fit/problem/contact/channel/total_score, qualification_reasoning, evidence, opportunity_hypothesis, disqualify_reason, contact_name, contact_role, last_updated, last_error`. Every update writes all of these, keeping unchanged values.
+- **Inputs:** `Settings` (`RESEARCH_BATCH_SIZE`, `MIN_QUALIFY_SCORE`, `ACTIVE_NICHE`), `Niches`, `Leads` (stage `New Lead`, plus its **header row**), `Suppression`; the website; the company registry for the lead's country; Gemini.
+- **Outputs (Leads, matched on `lead_id`):** `company_number, company_status, legal_entity_type, stage, fit/problem/contact/channel/total_score, qualification_reasoning, evidence, opportunity_hypothesis, disqualify_reason, contact_name, contact_role, last_updated, last_error`, plus `registry_country, registry_provider, registry_status, registry_source_url, registry_checked_at, registry_match_rationale`. Every update writes all of these, keeping unchanged values.
+- **Fails closed:** WF02 refuses to run (nothing fetched, nothing written) if the Leads header row lacks any column it writes, because Google Sheets would silently drop those values.
+- **Registry verification (`src/lib/registries.js`), kept separate from website evidence:**
+
+  | Lead `country` | Adapter | Behaviour |
+  |---|---|---|
+  | UK / GB | Companies House (live) | Looks up by company number (entered by you, or found on the website footer); otherwise by exact-name search. |
+  | US | `us_state_registry` (**not live**) | No request. Always `UNVERIFIED`, with the reason. |
+  | IN | `mca_india` (**not live**) | No request. Always `UNVERIFIED`, with the reason. |
+  | anything else | none | `UNVERIFIED`. |
+
+  - `VERIFIED`: an active, eligible record matched by number, or by a unique exact name.
+  - `INELIGIBLE`: a record identified **by company number** that says the company isn't active, or isn't a limited company or LLP. The lead is Disqualified.
+  - `UNVERIFIED`: an API failure, no match, an ambiguous match, a single name match that is inactive (it may be a different entity), an unsupported country, an adapter that isn't live, or no name or number. This is never read as "does not exist".
+  - `MANUAL_VERIFIED`: set by you, with `registry_source_url` and `registry_match_rationale`. WF02 keeps your values.
+  - If the niche's `legal_entity_required` is set (Test 1: `limited_company_or_llp`), only `VERIFIED` or `MANUAL_VERIFIED` can qualify; `UNVERIFIED` goes to `Researched`. If it's blank or `none`, `UNVERIFIED` doesn't block, and the reasoning notes it.
 - **Rules:**
-  - Fetches at most 3 pages per lead, one request per second, with an identifying User-Agent.
-  - The Companies House company number comes from `company_number` if you've entered it, otherwise from the website footer, otherwise from an exact name search.
-  - The company must be active and limited (ltd/llp/plc/guarantee variants), or the lead is Disqualified.
+  - Fetches at most 3 pages per lead, one request per second, with an identifying User-Agent. The registry lookup runs even when the website fetch fails.
   - A Gemini quote counts only if it appears **verbatim** on the page it cites. `problem_score` is capped at 1 without a verified quote and at 2 with one.
   - `channel_score` is computed by code (role vs personal address). `contact_score` is capped by what is verified.
   - A no-solicitation notice, a verified exclusion, or no published email is a hard gate.
@@ -80,10 +94,10 @@ Approval (Phase 5) is **done by a human** in the Sheet, not by a workflow. Autom
 - **Outcomes:**
   - `Qualified`.
   - `Disqualified`, with the reason.
-  - `Researched`, when Companies House can't be matched automatically. Enter `company_number`, set the stage back to `New Lead`, and re-run.
+  - `Researched`, when the niche requires a legal entity and registration is `UNVERIFIED`. For GB, enter `company_number`; for any country, you can instead set `registry_status = MANUAL_VERIFIED` with a source URL and rationale. Then set the stage back to `New Lead` and re-run.
   - Stage unchanged with `last_error`, on a website or AI failure. These leads are retried, after fresh leads.
 - **Idempotency:** only `New Lead` rows are processed.
-- **Tests:** `tests/wf02-research-logic.test.js`, engine E2E steps 2–3.
+- **Tests:** `tests/wf02-research-logic.test.js`, `tests/registries.test.js`, engine E2E steps 2–3, and the engine checks for an un-migrated header and for US/IN routing.
 
 ### WF03 Draft Generation
 - **Inputs:** `Settings` (sender identity), `Niches` (`template_id`, `cta`), `Leads`, `Suppression`; Gemini.

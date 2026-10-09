@@ -6,9 +6,11 @@
 // workflows/WF02-research-qualify.json. IMPORTS and the EXPORT tail are stripped.
 //
 // Pipeline per lead: fetch homepage → fetch ≤2 internal pages (contact, about/team)
-// → Companies House check (UK) → Gemini scoring → deterministic caps and hard
-// gates → one Leads update. Any step that can't complete leaves the lead in a
-// state a human can see; nothing is ever qualified on unverified data.
+// → company-registry check routed by the lead's country (src/lib/registries.js)
+// → Gemini scoring of the website → deterministic caps and hard gates → one
+// Leads update. Website evidence (Leads.evidence) and legal registration
+// (Leads.registry_*) are kept separate. Any step that can't complete leaves the
+// lead in a state a human can see; nothing is qualified on unverified data.
 
 // ---- IMPORTS (stripped when embedded in n8n) ----
 const {
@@ -17,17 +19,14 @@ const {
   formatEvidence, parseIntSetting,
 } = require('./lib/common');
 const { geminiUrl, geminiBody, parseGeminiJson } = require('./lib/gemini');
+const {
+  REGISTRY_STATUS, REGISTRY_COLUMNS, normaliseUkCompanyNumber, planRegistryLookup, evaluateRegistry,
+  isRegistryVerified, registryRequired, registryColumns,
+} = require('./lib/registries');
 // ---- END IMPORTS ----
 
-const COMPANIES_HOUSE_API = 'https://api.company-information.service.gov.uk';
 const MAX_PAGE_CHARS = 6000;
 const WEIGHTS = { fit: 30, problem: 30, contact: 20, channel: 20 };
-
-// Companies House `type` values that count as "limited company or LLP".
-const ALLOWED_COMPANY_TYPES = new Set([
-  'ltd', 'llp', 'plc', 'private-limited-guarant-nsc', 'private-limited-guarant-nsc-limited-exemption',
-  'private-limited-shares-section-30-exemption',
-]);
 
 // Mailbox names that indicate a shared role address rather than a person.
 const ROLE_LOCAL_PARTS = new Set([
@@ -43,7 +42,7 @@ const WF02_COLUMNS = [
   'lead_id', 'company_number', 'company_status', 'legal_entity_type', 'stage', 'fit_score',
   'problem_score', 'contact_score', 'channel_score', 'total_score', 'qualification_reasoning',
   'evidence', 'opportunity_hypothesis', 'disqualify_reason', 'contact_name', 'contact_role',
-  'last_updated', 'last_error',
+  'last_updated', 'last_error', ...REGISTRY_COLUMNS,
 ];
 
 const NO_SOLICITATION_PATTERNS = [
@@ -64,8 +63,21 @@ function websiteUrl(raw) {
 
 // ---------- step 1: choose the batch ----------
 
-function selectResearchBatch({ settingsRows, nichesRows, leadsRows, suppressionRows, now }) {
+// Google Sheets silently ignores updates to columns a tab doesn't have, so WF02
+// reads the Leads header row and refuses to run until every column it writes exists.
+function assertLeadsHeader(leadsHeaderRows) {
+  const header = realRows(leadsHeaderRows).find((r) => text(r.lead_id) === 'lead_id');
+  if (!header) throw new Error('Could not read the Leads header row; research aborted.');
+  const present = new Set(Object.values(header).map((v) => text(v)));
+  const missing = WF02_COLUMNS.filter((c) => !present.has(c));
+  if (missing.length) {
+    throw new Error(`The Leads tab is missing columns: ${missing.join(', ')}. Add them at the end of the header row (docs/09 §2), then re-run. Research aborted.`);
+  }
+}
+
+function selectResearchBatch({ settingsRows, nichesRows, leadsRows, suppressionRows, leadsHeaderRows, now }) {
   const timestamp = text(now) || new Date().toISOString();
+  assertLeadsHeader(leadsHeaderRows);
   const settings = parseSettings(realRows(settingsRows));
   const niche = resolveActiveNiche(settings, realRows(nichesRows), 'research');
   const batchSize = parseIntSetting(settings.RESEARCH_BATCH_SIZE, 1, 25);
@@ -93,7 +105,8 @@ function selectResearchBatch({ settingsRows, nichesRows, leadsRows, suppressionR
       lead_id: text(lead.lead_id),
       request_url: parseHost(url, { requireScheme: true }) ? url : '',
       website_url: url,
-      country: niche.country,
+      // Registry routing uses the lead's own country; the niche's is the fallback.
+      country: text(lead.country) || niche.country,
       niche: niche.row,
       min_score: minScore,
       lead,
@@ -200,14 +213,8 @@ function findNoSolicitation(pages) {
   return null;
 }
 
-function normaliseCompanyNumber(value) {
-  const v = text(value).toUpperCase().replace(/\s+/g, '');
-  if (/^\d{1,8}$/.test(v)) return v.padStart(8, '0');
-  if (/^(SC|NI|OC|SO|NC|R0|NL|SL)\d{6}$/.test(v)) return v;
-  return '';
-}
-
-// Combines fetched pages into the research record and plans the Companies House lookup.
+// Combines fetched pages into the research record and plans the registry lookup.
+// The registry lookup doesn't depend on the website fetch succeeding.
 function assembleResearch(item, homeResponse, pageResponses) {
   const home = responseHtml(homeResponse);
   const pages = [];
@@ -225,78 +232,32 @@ function assembleResearch(item, homeResponse, pageResponses) {
   const fetchError = !item.request_url ? 'website is not a valid http(s) address' : home.html ? '' : `Website fetch failed: ${clip(home.error, 200)}`;
   const allText = pages.map((p) => p.text).join('\n');
 
-  let companyNumber = normaliseCompanyNumber(item.lead.company_number);
+  // A company number entered by a human wins over one found on the website.
+  let companyNumber = text(item.lead.company_number);
+  let numberSource = companyNumber ? 'entered in the Leads sheet' : '';
   if (!companyNumber) {
     const m = /(?:company|registration|registered|reg\.?)\s*(?:no\.?|number|num\.?|#)\s*[:.]?\s*((?:SC|NI|OC|SO|NC|R0)?\s?\d{6,8})\b/i.exec(allText);
-    if (m) companyNumber = normaliseCompanyNumber(m[1]);
+    if (m) {
+      companyNumber = m[1];
+      numberSource = "found on the business's own website";
+    }
   }
-
-  let chRequestUrl = '';
-  if (!fetchError && text(item.country).toUpperCase() === 'UK') {
-    chRequestUrl = companyNumber
-      ? `${COMPANIES_HOUSE_API}/company/${encodeURIComponent(companyNumber)}`
-      : `${COMPANIES_HOUSE_API}/search/companies?q=${encodeURIComponent(text(item.lead.company_name))}&items_per_page=5`;
-  }
+  const registryPlan = planRegistryLookup({ lead: item.lead, country: item.country, companyNumber, numberSource });
 
   return {
     ...item,
     pages,
     emails_found: [...emails],
     fetch_error: fetchError,
-    company_number_hint: companyNumber,
+    company_number_hint: normaliseUkCompanyNumber(companyNumber) || text(companyNumber),
     no_solicitation: fetchError ? null : findNoSolicitation(pages),
-    ch_request_url: chRequestUrl,
+    registry_plan: registryPlan,
+    // Only the Companies House adapter has a live HTTP node; other countries leave this empty.
+    ch_request_url: registryPlan.provider === 'companies_house' ? registryPlan.request_url : '',
   };
 }
 
-// ---------- step 3: Companies House ----------
-
-function normaliseCompanyName(name) {
-  return text(name)
-    .toLowerCase()
-    .replace(/&/g, ' and ')
-    .replace(/[^a-z0-9 ]+/g, ' ')
-    .replace(/\b(the|limited|ltd|llp|plc|company|co)\b/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-function evaluateCompaniesHouse(assembled, response) {
-  if (text(assembled.country).toUpperCase() !== 'UK') return { required: false, verified: true, reason: 'Companies House check not required outside the UK' };
-  if (!assembled.ch_request_url) return { required: true, verified: false, definitive: false, reason: 'Companies House lookup skipped (website could not be fetched)' };
-  const r = response || {};
-  if (r.error) {
-    const msg = text(r.error.message || r.error);
-    return { required: true, verified: false, definitive: false, reason: `Companies House lookup failed: ${clip(msg, 160)}` };
-  }
-  let profile = null;
-  if (text(r.company_number) && text(r.company_status)) {
-    profile = { number: text(r.company_number), status: text(r.company_status), type: text(r.type), name: text(r.company_name) };
-  } else if (Array.isArray(r.items)) {
-    const wanted = normaliseCompanyName(assembled.lead.company_name);
-    const matches = r.items.filter((i) => i && normaliseCompanyName(i.title) === wanted);
-    if (matches.length !== 1) {
-      return {
-        required: true,
-        verified: false,
-        definitive: false,
-        reason: matches.length === 0
-          ? `No exact Companies House name match for "${text(assembled.lead.company_name)}" (${r.items.length} search results)`
-          : `${matches.length} Companies House companies share the name "${text(assembled.lead.company_name)}"`,
-      };
-    }
-    const m = matches[0];
-    profile = { number: text(m.company_number), status: text(m.company_status), type: text(m.company_type), name: text(m.title) };
-  } else {
-    return { required: true, verified: false, definitive: false, reason: 'Unexpected Companies House response' };
-  }
-  const base = { required: true, number: profile.number, status: profile.status, type: profile.type, name: profile.name };
-  if (profile.status !== 'active') return { ...base, verified: false, definitive: true, reason: `Companies House status is "${profile.status}", not active` };
-  if (!ALLOWED_COMPANY_TYPES.has(profile.type)) return { ...base, verified: false, definitive: true, reason: `Companies House type "${profile.type}" is not a limited company or LLP` };
-  return { ...base, verified: true, reason: `Companies House: ${profile.name} (${profile.number}), ${profile.type}, active` };
-}
-
-// ---------- step 4: AI request ----------
+// ---------- step 3: AI request (website evidence only) ----------
 
 function researchPrompt(assembled) {
   const n = assembled.niche || {};
@@ -331,14 +292,15 @@ function researchPrompt(assembled) {
   ].join('\n');
 }
 
-function buildAiRequest(assembled, ch, model) {
+function buildAiRequest(assembled, registry, model) {
   if (assembled.fetch_error) return { request_url: '', skip_reason: assembled.fetch_error };
   if (assembled.no_solicitation) return { request_url: '', skip_reason: 'no-solicitation notice found' };
-  if (ch.required && !ch.verified) return { request_url: '', skip_reason: ch.reason };
+  if (registry.registry_status === REGISTRY_STATUS.INELIGIBLE) return { request_url: '', skip_reason: registry.registry_match_rationale };
+  if (registryRequired(assembled.niche) && !isRegistryVerified(registry)) return { request_url: '', skip_reason: `registration ${registry.registry_status}` };
   return { request_url: geminiUrl(model), ai_body: geminiBody(researchPrompt(assembled)) };
 }
 
-// ---------- step 5: scoring and gates ----------
+// ---------- step 4: scoring and gates ----------
 
 function matchable(s) {
   return text(s).toLowerCase().replace(/[‘’]/g, "'").replace(/[“”]/g, '"').replace(/\s+/g, ' ').trim();
@@ -374,37 +336,41 @@ function channelScore(lead) {
   return d === text(lead.lead_id).toLowerCase() ? 3 : 2;
 }
 
-function scoreAndGate({ assembled, ch, aiResponse, now }) {
+function scoreAndGate({ assembled, registry, aiResponse, now }) {
   const lead = assembled.lead;
   const timestamp = text(now) || new Date().toISOString();
-  const chColumns = ch.required && ch.number ? { company_number: ch.number, company_status: ch.status, legal_entity_type: ch.type } : {};
+  // The registry result is recorded on every path; it never touches Leads.evidence.
+  const reg = registryColumns(registry, lead);
+  const required = registryRequired(assembled.niche);
 
   if (assembled.fetch_error) {
-    // Nothing was analysed: keep the stage so the lead is retried, and say why.
-    return researchUpdate(lead, { last_error: clip(assembled.fetch_error, 300) }, timestamp);
+    // The website wasn't analysed: keep the stage so the lead is retried, and say why.
+    return researchUpdate(lead, { ...reg, last_error: clip(assembled.fetch_error, 300) }, timestamp);
   }
   if (assembled.no_solicitation) {
     const ns = assembled.no_solicitation;
-    return researchUpdate(lead, { ...chColumns, stage: STAGE.DISQUALIFIED, disqualify_reason: clip(`No-solicitation notice: "${ns.quote}" (${ns.url})`, 500), last_error: '' }, timestamp);
+    return researchUpdate(lead, { ...reg, stage: STAGE.DISQUALIFIED, disqualify_reason: clip(`No-solicitation notice: "${ns.quote}" (${ns.url})`, 500), last_error: '' }, timestamp);
   }
-  if (ch.required && !ch.verified) {
-    if (ch.definitive) return researchUpdate(lead, { ...chColumns, stage: STAGE.DISQUALIFIED, disqualify_reason: ch.reason, last_error: '' }, timestamp);
+  if (registry.registry_status === REGISTRY_STATUS.INELIGIBLE) {
+    return researchUpdate(lead, { ...reg, stage: STAGE.DISQUALIFIED, disqualify_reason: clip(`Registry (${registry.registry_provider}): ${registry.registry_match_rationale}`, 500), last_error: '' }, timestamp);
+  }
+  if (required && !isRegistryVerified(registry)) {
     return researchUpdate(lead, {
-      ...chColumns,
+      ...reg,
       stage: STAGE.RESEARCHED,
-      qualification_reasoning: clip(`Needs manual check: ${ch.reason}. Verify the company on Companies House, enter company_number, then set stage back to "New Lead" to re-run research.`, 1000),
-      last_error: clip(ch.reason, 300),
+      qualification_reasoning: clip(`Needs manual registry check (niche requires "${text(assembled.niche.legal_entity_required)}"; registry_status ${registry.registry_status}). See registry_match_rationale. Verify with the official registry, then either enter company_number (GB) or set registry_status = MANUAL_VERIFIED with registry_source_url and registry_match_rationale, and set stage back to "New Lead".`, 1000),
+      last_error: clip(`Registration ${registry.registry_status}: ${registry.registry_match_rationale}`, 300),
     }, timestamp);
   }
 
   const ai = parseGeminiJson(aiResponse);
-  if (!ai.ok) return researchUpdate(lead, { last_error: clip(ai.error, 300) }, timestamp);
+  if (!ai.ok) return researchUpdate(lead, { ...reg, last_error: clip(ai.error, 300) }, timestamp);
   const v = ai.value;
   const fit = clampScore(v.fit_score);
   const problemAi = clampScore(v.problem_score);
   const contactAi = clampScore(v.contact_score);
   if (fit === null || problemAi === null || contactAi === null) {
-    return researchUpdate(lead, { last_error: 'AI response invalid: scores must be integers 0-3' }, timestamp);
+    return researchUpdate(lead, { ...reg, last_error: 'AI response invalid: scores must be integers 0-3' }, timestamp);
   }
 
   const pages = assembled.pages;
@@ -443,7 +409,7 @@ function scoreAndGate({ assembled, ch, aiResponse, now }) {
   }
 
   const notes = [];
-  if (ch.required) notes.push(ch.reason);
+  if (!isRegistryVerified(registry)) notes.push(`registration ${registry.registry_status} (not required for this niche)`);
   if (droppedEvidence > 0) notes.push(`${droppedEvidence} AI quote(s) discarded because they were not found verbatim on the cited page`);
   if (override !== null) notes.push(`score_override ${override} used instead of computed ${total}`);
   const reasoning = clip([text(v.qualification_reasoning), ...notes].filter(Boolean).join(' | '), 1500);
@@ -459,7 +425,7 @@ function scoreAndGate({ assembled, ch, aiResponse, now }) {
   }
 
   return researchUpdate(lead, {
-    ...chColumns,
+    ...reg,
     stage,
     fit_score: fit,
     problem_score: problem,
@@ -479,16 +445,13 @@ function scoreAndGate({ assembled, ch, aiResponse, now }) {
 // ---- EXPORT (stripped when embedded in n8n) ----
 module.exports = {
   WF02_COLUMNS,
-  ALLOWED_COMPANY_TYPES,
+  assertLeadsHeader,
   selectResearchBatch,
   htmlToText,
   emailsInHtml,
   decodeCfEmail,
   planPagesForLead,
   assembleResearch,
-  evaluateCompaniesHouse,
-  normaliseCompanyName,
-  normaliseCompanyNumber,
   buildAiRequest,
   researchPrompt,
   verifyQuote,

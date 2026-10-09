@@ -131,6 +131,19 @@ function readNode(wf, name, sheetName, position) {
   };
 }
 
+// Reads the tab with the header row as the first data row (header row 1, first
+// data row 1), so the header names come back as an item whose values are the
+// column names. Used to fail closed when a tab lacks columns a workflow writes.
+function headerReadNode(wf, name, sheetName, position) {
+  return {
+    ...readNode(wf, name, sheetName, position),
+    parameters: {
+      ...sheetRef(sheetName),
+      options: { dataLocationOnSheet: { values: { rangeDefinition: 'specifyRange', headerRow: 1, firstDataRow: 1 } } },
+    },
+  };
+}
+
 function configNode(wf, assignments, position) {
   return {
     parameters: {
@@ -539,14 +552,16 @@ function chainEdges(...names) {
 
 function buildWf02() {
   const wf = 'WF02';
-  const mods = ['lib/common.js', 'lib/gemini.js', 'wf02-research-logic.js'];
+  const mods = ['lib/common.js', 'lib/gemini.js', 'lib/registries.js', 'wf02-research-logic.js'];
   const cols = require('../src/wf02-research-logic').WF02_COLUMNS;
   const nodes = [
     stickyNote(wf, 'About WF02', [
       '## WF02 Research & Qualify (manual)',
-      'Takes up to `RESEARCH_BATCH_SIZE` **New Lead** rows of the active niche: fetches the homepage plus at most 2 pages (contact, about/team), checks Companies House (UK), asks Gemini for scores with exact quotes, then applies deterministic caps and hard gates (architecture §5).',
+      'Takes up to `RESEARCH_BATCH_SIZE` **New Lead** rows of the active niche: fetches the homepage plus at most 2 pages (contact, about/team), checks the company registry for the lead\'s country (GB: Companies House; US and IN adapters are not live and return UNVERIFIED), asks Gemini for scores with exact quotes, then applies deterministic caps and hard gates (architecture §3.3, §5).',
       '',
-      'Outcome per lead: **Qualified**, **Disqualified** (reason recorded), **Researched** (needs a manual Companies House check), or unchanged with `last_error` (fetch/AI failure, retried next run).',
+      'Outcome per lead: **Qualified**, **Disqualified** (reason recorded), **Researched** (needs a manual registry check), or unchanged with `last_error` (fetch/AI failure, retried next run). Registry results go to the `registry_*` columns, never to `evidence`.',
+      '',
+      '**Refuses to run** if the Leads header lacks any column it writes (Sheets would silently drop them).',
       '',
       '**Setup:** `sheet_id` and `gemini_model` in **Config**; Google Sheets credential on Sheets nodes; *Basic Auth* credential (CH API key as user, blank password) on **Companies House**; *Header Auth* credential (`x-goog-api-key`) on **Gemini**.',
     ].join('\n'), [-60, -460], 760, 300),
@@ -556,6 +571,7 @@ function buildWf02() {
     readNode(wf, 'Read Niches', 'Niches', [660, 0]),
     readNode(wf, 'Read Leads', 'Leads', [880, 0]),
     readNode(wf, 'Read Suppression', 'Suppression', [1100, 0]),
+    headerReadNode(wf, 'Read Leads Header', 'Leads', [1320, 0]),
     codeNode(wf, 'Select Batch', embedModules(mods, [
       ...GLUE_ROWS_FROM,
       'const result = selectResearchBatch({',
@@ -563,10 +579,11 @@ function buildWf02() {
       "  nichesRows: rowsFrom('Read Niches'),",
       "  leadsRows: rowsFrom('Read Leads'),",
       "  suppressionRows: rowsFrom('Read Suppression'),",
+      "  leadsHeaderRows: rowsFrom('Read Leads Header'),",
       '  now: new Date().toISOString(),',
       '});',
       'return [{ json: result }];',
-    ]), [1320, 0]),
+    ]), [1540, 0]),
     splitCode(wf, 'Suppressed Leads', '$input.first().json.immediateUpdates', [1540, -200]),
     updateNode(wf, 'Update Leads (Suppressed)', 'Leads', cols, 'lead_id', [1760, -200]),
     splitCode(wf, 'Research Items', "$('Select Batch').first().json.researchItems", [1540, 100]),
@@ -600,10 +617,12 @@ function buildWf02() {
     codeNode(wf, 'Build AI Requests', embedModules(mods, [
       "const assembled = $('Assemble Research').all().map((i) => i.json);",
       "const model = $('Config').first().json.gemini_model;",
+      'const now = new Date().toISOString();',
       'return $input.all().map((item, i) => {',
       '  const a = assembled[pairedIndex(item, i)];',
-      '  const ch = evaluateCompaniesHouse(a, a.ch_request_url ? item.json : {});',
-      '  return { json: { ...a, ch, ...buildAiRequest(a, ch, model) } };',
+      '  // Only a planned request has a real response; skipped items carry the empty-URL error.',
+      '  const registry = evaluateRegistry(a.registry_plan, a.registry_plan.request_url ? item.json : {}, now);',
+      '  return { json: { ...a, registry, ...buildAiRequest(a, registry, model) } };',
       '});',
     ]), [2860, 100]),
     httpNode(wf, 'Gemini', { method: 'POST', urlField: 'request_url', auth: 'httpHeaderAuth', jsonBodyField: 'ai_body', responseFormat: 'json', batchInterval: 4500, timeout: 60000 }, [3080, 100]),
@@ -612,13 +631,13 @@ function buildWf02() {
       'const now = new Date().toISOString();',
       'return $input.all().map((item, i) => {',
       '  const b = built[pairedIndex(item, i)];',
-      '  return { json: scoreAndGate({ assembled: b, ch: b.ch, aiResponse: b.request_url ? item.json : {}, now }) };',
+      '  return { json: scoreAndGate({ assembled: b, registry: b.registry, aiResponse: b.request_url ? item.json : {}, now }) };',
       '});',
     ]), [3300, 100]),
     updateNode(wf, 'Update Leads (Research)', 'Leads', cols, 'lead_id', [3520, 100]),
   ];
   const connections = edges([
-    ...chainEdges('Run Research', 'Config', 'Read Settings', 'Read Niches', 'Read Leads', 'Read Suppression', 'Select Batch'),
+    ...chainEdges('Run Research', 'Config', 'Read Settings', 'Read Niches', 'Read Leads', 'Read Suppression', 'Read Leads Header', 'Select Batch'),
     ...chainEdges('Select Batch', 'Suppressed Leads', 'Update Leads (Suppressed)'),
     ...chainEdges('Select Batch', 'Research Items', 'Fetch Homepage', 'Plan Pages', 'Fetch Pages', 'Assemble Research', 'Companies House', 'Build AI Requests', 'Gemini', 'Score & Gate', 'Update Leads (Research)'),
   ]);

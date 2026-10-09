@@ -35,6 +35,8 @@ If you already created the Sheet in Phase 2, do **step 2.3 only** (the migration
    | `BUSINESS_LEGAL_NAME` | *(your legal name)* | Required in every email footer. |
    | `LIVE_RECIPIENT_ALLOWLIST` | *(blank)* | Optional; used only in the Phase 7 live test. |
 
+   In **Leads**, add six headers **at the end of row 1**, after `last_error`, in this order: `registry_country`, `registry_provider`, `registry_status`, `registry_source_url`, `registry_checked_at`, `registry_match_rationale`. Don't move any existing column. WF02 refuses to run until these exist.
+
 4. Fill in `SENDER_NAME`, `SENDER_EMAIL`, `BUSINESS_POSTAL_ADDRESS`, `WEBSITE_URL`, `PRIVACY_URL` (full `https://` URLs), and `TEST_RECIPIENT` (your own inbox).
 5. Optional but helpful: add data validation (**Data → Data validation**, dropdown) on Leads `approval_status` (`Pending, Approved, Rejected, Needs Edit`) and `stage` (the 13 stages in `08-workflows.md` §5).
 6. Leave `SENDING_ENABLED = FALSE` and `TEST_MODE = TRUE`.
@@ -128,10 +130,10 @@ This sends **real** email, but only to mailboxes FlowHQ owns. The allowlist make
 
 | Command | What it does | Needs |
 |---|---|---|
-| `npm test` | Checks that generated files match `src/`, then runs 137 unit, schema, workflow-structure, E2E-logic and secret-scan tests | Node ≥ 20 |
+| `npm test` | Checks that generated files match `src/`, then runs 154 unit, schema, workflow-structure, registry, E2E-logic and secret-scan tests | Node ≥ 20 |
 | `npm run scan` | Secret, personal-data and real-sheet-ID scan of all committed files | Node ≥ 20 |
 | `npm run build` | Regenerates `sheets/` and `workflows/` after editing `src/` | Node ≥ 20 |
-| `N8N_BIN=… N8N_USER_FOLDER=$(mktemp -d) npm run test:engine` | Imports all workflows into a **throwaway** n8n and runs 22 engine checks, including the WF01→WF06 chain, with Google services stubbed | n8n 2.x CLI + **Node 24**. Never point `N8N_USER_FOLDER` at your real n8n data. |
+| `N8N_BIN=… N8N_USER_FOLDER=$(mktemp -d) npm run test:engine` | Imports all workflows into a **throwaway** n8n and runs 24 engine checks, including the WF01→WF06 chain, the un-migrated-header refusal and US/IN registry routing, with Google services stubbed | n8n 2.x CLI + **Node 24**. Never point `N8N_USER_FOLDER` at your real n8n data. |
 
 CI (`.github/workflows/ci.yml`) runs `npm test` on every push.
 
@@ -179,9 +181,9 @@ Watch the first day's Send_Log and Errors tabs.
 1. **Laptop-bound.** Nothing runs while the laptop sleeps, and missed schedules aren't caught up. Opt-outs are processed only while WF05 runs; legal deadlines are 5–10 business days (`03`), so don't leave the system off for a week while emails are outstanding.
 2. **No external service has been verified** from this build environment: Google Sheets, Gmail, Companies House, Gemini, and real websites are all stubbed.
 3. **Polling, not instant.** WF05 reads up to 100 messages from the last 7 days every 15 minutes.
-4. **Companies House matching:**
-   - Without a company number on the website, the match has to be an exact legal name.
-   - Leads that trade under a different name go to `Researched` for a manual check.
+4. **Registry verification:**
+   - Only GB (Companies House) is live. US and India adapters are designed but make no requests until an official source and credentials are confirmed, so those leads are always `UNVERIFIED`; use `MANUAL_VERIFIED` after checking by hand.
+   - Without a company number, a GB match has to be an exact legal name. Leads that trade under a different name stay `UNVERIFIED` and go to `Researched` for a manual check.
 5. **Heuristics:**
    - Bounce and auto-reply detection relies on common formats, and Gmail may not thread every bounce.
    - Opt-out detection is keyword-based and errs towards suppressing.
