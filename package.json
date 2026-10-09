@@ -1,0 +1,13 @@
+{
+  "name": "flowhq-lead-outreach-engine",
+  "version": "0.2.0",
+  "private": true,
+  "description": "FlowHQ internal lead generation and outreach engine (n8n + Google Sheets).",
+  "scripts": {
+    "build": "node scripts/build.js",
+    "test": "node scripts/build.js --check && node --test tests/*.test.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

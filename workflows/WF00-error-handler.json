@@ -1,0 +1,201 @@
+{
+  "name": "WF00 Error Handler",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## WF00 Error Handler\nRuns when any workflow that names it as its **Error workflow** fails in a production (trigger/scheduled) run. Writes a row to the **Errors** tab and emails FlowHQ.\n\n**Setup:** set `sheet_id` and `alert_email` in **Config**; pick credentials in **Append to Errors** and **Email Alert**. If Gmail is not connected yet, disable **Email Alert** (right-click → Deactivate) until Phase 5.\n\nn8n does **not** call error workflows for manual \"Execute workflow\" runs; those errors show in the editor.",
+        "height": 280,
+        "width": 660
+      },
+      "id": "84f0249d-81ce-4c2c-aa01-92c383beb455",
+      "name": "About WF00",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -60,
+        -380
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "ce3ea809-8b4a-4481-a6e2-195060a0f721",
+      "name": "On Workflow Error",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "ca94fc53-7c51-4363-ac58-6b2be3a23a29",
+              "name": "sheet_id",
+              "value": "PASTE_YOUR_GOOGLE_SHEET_ID_HERE",
+              "type": "string"
+            },
+            {
+              "id": "6cafdefe-2d33-4b66-a94c-57499d82e707",
+              "name": "alert_email",
+              "value": "PASTE_FLOWHQ_ALERT_EMAIL_HERE",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "bdd76078-87bd-47fe-a111-da9f53963565",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        220,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Generated from src/wf00-format-error.js by scripts/build.js. Do not edit here;\n// edit the source file, run `npm run build`, and re-import the workflow.\n\n// WF00 Error Handler: turns n8n Error Trigger output into an `Errors` row and an\n// alert email. Embedded verbatim into the \"Format Error\" Code node by\n// `npm run build` (everything after the EXPORT marker is stripped).\n\nconst MAX_MESSAGE_LENGTH = 1000;\n\nfunction errText(value) {\n  if (value === null || value === undefined) return '';\n  return String(value).trim();\n}\n\n// Spreadsheets treat a leading = + - @ as a formula; prefix with ' so the text\n// is stored literally even if the sheet is later switched to USER_ENTERED.\nfunction sheetSafe(value) {\n  const s = errText(value);\n  return /^[=+\\-@]/.test(s) ? `'${s}` : s;\n}\n\n// Later workflows can include \"lead_id=<id>\" in an error message (for example\n// from a Stop and Error node) so the Errors row links back to the lead.\nfunction extractLeadId(message) {\n  const match = /lead_id\\s*[=:]\\s*([^\\s;,]+)/i.exec(message);\n  return match ? match[1] : '';\n}\n\n// Accepts both shapes the Error Trigger emits: execution errors\n// ({ execution, workflow }) and trigger/activation errors ({ trigger, workflow }).\nfunction formatError(data, now) {\n  const d = data || {};\n  const execution = d.execution || {};\n  const trigger = d.trigger || {};\n  const error = execution.error || trigger.error || {};\n  const workflowName = errText(d.workflow && d.workflow.name) || '(unknown workflow)';\n  const node = errText(execution.lastNodeExecuted) || errText(error.node && error.node.name) || (d.trigger ? '(trigger)' : '');\n  const rawMessage = errText(error.message) || errText(error.description) || 'No error message provided';\n  const description = errText(error.description);\n  const fullMessage = description && description !== rawMessage ? `${rawMessage}: ${description}` : rawMessage;\n  const executionRef = execution.id ? `[execution ${execution.id}] ` : '';\n  const message = (executionRef + fullMessage).slice(0, MAX_MESSAGE_LENGTH);\n  const timestamp = errText(now) || new Date().toISOString();\n\n  const row = {\n    timestamp,\n    workflow: sheetSafe(workflowName),\n    node: sheetSafe(node),\n    lead_id: sheetSafe(extractLeadId(fullMessage)),\n    message: sheetSafe(message),\n  };\n\n  const emailSubject = `[FlowHQ n8n] ${workflowName} failed${node ? ` at \"${node}\"` : ''}`;\n  const emailBody = [\n    `Workflow: ${workflowName}`,\n    `Node: ${node || '(unknown)'}`,\n    `Time (UTC): ${timestamp}`,\n    `Mode: ${errText(execution.mode || trigger.mode) || '(unknown)'}`,\n    `Execution: ${errText(execution.url) || errText(execution.id) || '(none)'}`,\n    '',\n    `Error: ${fullMessage.slice(0, 4000)}`,\n    '',\n    'This alert was also written to the Errors tab (unless the Sheets write itself failed).',\n  ].join('\\n');\n\n  return { row, emailSubject, emailBody };\n}\n\n// ---- n8n glue ----\nconst { row, emailSubject, emailBody } = formatError($('On Workflow Error').first().json, new Date().toISOString());\nreturn [{ json: { ...row, email_subject: emailSubject, email_body: emailBody, alert_email: $('Config').first().json.alert_email } }];"
+      },
+      "id": "05fbd494-b183-48e1-ada3-6ea33d5f57d2",
+      "name": "Format Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const { timestamp, workflow, node, lead_id, message } = $input.first().json;\nreturn [{ json: { timestamp, workflow, node, lead_id, message } }];"
+      },
+      "id": "860c2db7-a525-4814-a852-93bc4e24fe0d",
+      "name": "Errors Row",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        -120
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $('Config').first().json.sheet_id }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Errors",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {
+          "cellFormat": "RAW",
+          "handlingExtraData": "error"
+        }
+      },
+      "id": "94039e4a-9116-452e-a71d-087dca57298f",
+      "name": "Append to Errors",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        880,
+        -120
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.alert_email }}",
+        "subject": "={{ $json.email_subject }}",
+        "emailType": "text",
+        "message": "={{ $json.email_body }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "66e4caab-e583-407a-af9d-49b99a95e2b7",
+      "name": "Email Alert",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        660,
+        120
+      ],
+      "onError": "continueRegularOutput"
+    }
+  ],
+  "connections": {
+    "On Workflow Error": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Format Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Error": {
+      "main": [
+        [
+          {
+            "node": "Errors Row",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Email Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Errors Row": {
+      "main": [
+        [
+          {
+            "node": "Append to Errors",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true
+  },
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": []
+}

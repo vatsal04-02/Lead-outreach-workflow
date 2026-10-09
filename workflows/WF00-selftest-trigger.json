@@ -1,0 +1,76 @@
+{
+  "name": "WF00 Self-Test (temporary)",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## WF00 self-test (temporary)\n1. In this workflow's **Settings**, set **Error workflow** to *WF00 Error Handler*.\n2. **Activate** this workflow, wait up to 2 minutes, then **deactivate** it.\n3. Check the Errors tab and your inbox for \"FlowHQ WF00 self-test\".\n\nDeactivate it straight away: while active it fails once a minute by design.",
+        "height": 240,
+        "width": 560
+      },
+      "id": "ac4cc0b1-c91b-40c1-a9a4-9727dbe6398a",
+      "name": "About self-test",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -60,
+        -320
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 1
+            }
+          ]
+        }
+      },
+      "id": "c46f8a1a-5f3c-4d5b-a76e-5938ec7eb320",
+      "name": "Every Minute",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "errorMessage": "FlowHQ WF00 self-test: this failure is intentional. lead_id=selftest.example"
+      },
+      "id": "ccd86537-9a74-4e4d-a1cd-f1c00f97d235",
+      "name": "Fail On Purpose",
+      "type": "n8n-nodes-base.stopAndError",
+      "typeVersion": 1,
+      "position": [
+        220,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Every Minute": {
+      "main": [
+        [
+          {
+            "node": "Fail On Purpose",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true
+  },
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": []
+}

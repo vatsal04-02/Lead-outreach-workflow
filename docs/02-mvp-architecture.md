@@ -95,11 +95,19 @@ One row per niche. The fields are listed in `01-strategy-icp-offer.md` §8.
 ### 3.4 `Suppression` tab
 `email`, `domain`, `reason` (`unsubscribe` / `bounce` / `complaint` / `manual` / `no_solicitation_notice`), `source`, `added_at`.
 Suppression applies at **both email and domain level** for initial outreach. Entries are never deleted.
+**Exception:** shared mailbox providers (gmail.com, btinternet.com, outlook.com and similar) are never suppressed at domain level, because that would block every agency using that provider. Only the individual address is suppressed. WF01 implements this list in `src/wf01-import-logic.js`.
 
 ### 3.5 Other tabs
 - `Send_Log`: an append-only record of every send attempt (`lead_id`, `to_email`, `subject`, `attempted_at`, `status`, `gmail_message_id`, `gmail_thread_id`, `test_mode`, `error`).
 - `Errors`: `timestamp`, `workflow`, `node`, `lead_id`, `message`.
 - `Metrics`: one row per day (see §8).
+
+### 3.6 `Import` tab (input for WF01)
+The human-filled Leads columns, in this order: `company_name`, `website`, `city`, `region`, `contact_name`, `contact_role`, `contact_email`, `email_source_url`, `phone`, `discovery_source`, `discovery_source_url`, `discovered_at`, `notes`. These are followed by four status columns that WF01 writes back: `import_status` (`IMPORTED` / `REJECTED_INVALID` / `REJECTED_DUPLICATE` / `REJECTED_SUPPRESSED`), `import_message`, `lead_id`, `processed_at`.
+- Required: `company_name`, `website`, `contact_email`, `email_source_url`. A lead without a published email can't be contacted, so it stays in the research sheet rather than entering Leads.
+- WF01 skips rows that already have an `import_status`, so re-running it never re-imports a row. To retry a rejected row, fix it and clear its `import_status`.
+
+The canonical column lists for every tab live in `src/schema.js`. `npm test` fails if they drift from this document.
 
 ---
 
@@ -152,7 +160,7 @@ A problem-evidence score above 1 without a quote and URL is **automatically capp
 
 | ID | Workflow | Phase | Trigger | Key safety behaviour |
 |---|---|---|---|---|
-| WF00 | Error Handler | 2 | Error Trigger | Writes to `Errors` and emails FlowHQ. Every other workflow points to it. |
+| WF00 | Error Handler | 2 | Error Trigger | Writes to `Errors` and emails FlowHQ. Every other workflow points to it. The alert address lives in WF00's own Config node, so alerts still work when Sheets is what failed. n8n only calls error workflows for production (scheduled or triggered) runs. Failures in manual runs show in the editor instead. |
 | WF01 | Import & Dedupe | 2 | Manual (reads an `Import` tab) | Normalises the domain and email. Rejects duplicates, suppressed entries, and rows without `email_source_url`. |
 | WF02 | Research & Qualify | 3 | Manual at first, scheduled later | Fetches the homepage plus at most 2 pages (contact, about/team) and strips HTML. Uses a low, identifiable request rate. JSON output is schema-validated, and invalid output changes **no** data. |
 | WF03 | Draft Generation | 4 | Manual | Per-niche template. Checks reject drafts with unresolved `{placeholders}`, numbers or percentages not present in the evidence, banned phrases ("case study", "our clients", "guarantee", …), more than ~120 words, or a missing footer. |

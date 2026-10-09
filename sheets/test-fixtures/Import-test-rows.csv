@@ -1,0 +1,10 @@
+company_name,website,city,region,contact_name,contact_role,contact_email,email_source_url,phone,discovery_source,discovery_source_url,discovered_at,notes,import_status,import_message,lead_id,processed_at
+Fixture One Lettings Ltd,https://www.fixture-one.example,Reading,Berkshire,,,info@fixture-one.example,https://www.fixture-one.example/contact,,manual-test,https://www.fixture-one.example/,2026-10-09,,,,,
+Fixture Two Estates Ltd,fixture-two.example,,,,,office@fixture-two-mail.example,https://directory.example/agents/fixture-two,,manual-test,,,,,,,
+Fixture Three Homes Ltd,https://fixture-three.example,Leicester,,,,info@fixture-three.example,,,manual-test,,,,,,,
+Fixture Four Property Ltd,https://fixture-four.example,Norwich,,,,info@fixture-four,https://fixture-four.example/contact,,manual-test,,,,,,,
+Fixture One Lettings (Branch),https://branch.fixture-one.example,Reading,,,,branch@fixture-one.example,https://branch.fixture-one.example/contact,,manual-test,,,,,,,
+Fixture Six Lettings Ltd,https://fixture-six.example,Reading,,,,info@fixture-six.example,https://fixture-six.example/contact,,manual-test,,,,,,,
+Fixture Seven Estates Ltd,https://www.fixture-seven.example,Leicester,,,,sales@fixture-seven.example,https://www.fixture-seven.example/contact,,manual-test,,,,,,,
+Fixture Eight Lettings Ltd,https://fixture-eight.example,Norwich,,,,a@fixture-eight.example; b@fixture-eight.example,https://fixture-eight.example/contact,,manual-test,,,,,,,
+Fixture Nine Property Ltd,https://fixture-nine.example/,Norwich,,,,MAILTO:Hello@Fixture-Nine.example,https://fixture-nine.example/about-us,,manual-test,,,TEST FIXTURE: delete after Phase 2 validation,,,,

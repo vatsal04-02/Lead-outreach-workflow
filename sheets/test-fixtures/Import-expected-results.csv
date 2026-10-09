@@ -1,0 +1,10 @@
+sheet_row,company_name,expected_import_status,expected_lead_id,expected_import_message
+2,Fixture One Lettings Ltd,IMPORTED,fixture-one.example,OK
+3,Fixture Two Estates Ltd,IMPORTED,fixture-two.example,Warnings: contact_email domain (fixture-two-mail.example) differs from website domain (fixture-two.example); email_source_url is not on the agency website; the ICP requires the email to be published on its own site; city is blank; discovery_source_url is blank
+4,Fixture Three Homes Ltd,REJECTED_INVALID,,email_source_url is required
+5,Fixture Four Property Ltd,REJECTED_INVALID,,"contact_email ""info@fixture-four"" is not a valid email address"
+6,Fixture One Lettings (Branch),REJECTED_DUPLICATE,fixture-one.example,same website as Import row 2 in this run
+7,Fixture Six Lettings Ltd,REJECTED_SUPPRESSED,fixture-six.example,contact_email is on the Suppression list
+8,Fixture Seven Estates Ltd,REJECTED_SUPPRESSED,fixture-seven.example,domain is on the Suppression list
+9,Fixture Eight Lettings Ltd,REJECTED_INVALID,,contact_email must contain exactly one address
+10,Fixture Nine Property Ltd,IMPORTED,fixture-nine.example,Warnings: discovery_source_url is blank

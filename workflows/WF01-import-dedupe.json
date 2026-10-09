@@ -1,0 +1,466 @@
+{
+  "name": "WF01 Import & Dedupe",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## WF01 Import & Dedupe\nReads new rows from the **Import** tab, validates and normalises them, rejects duplicates and suppressed contacts, appends good rows to **Leads** as `New Lead`, and writes a status back to each Import row.\n\n**Setup:** set `sheet_id` in **Config** and pick your Google Sheets credential in every Sheets node.\n\nLogic lives in `src/wf01-import-logic.js` (unit-tested). Rows that already have an `import_status` are skipped, so re-running is safe.",
+        "height": 260,
+        "width": 620
+      },
+      "id": "64c0e472-83be-47f4-aae0-d32834d36042",
+      "name": "About WF01",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -60,
+        -360
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "dd1e987e-1b8d-46ff-ac8c-d972d1bae407",
+      "name": "Run Import",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "a4f9ed16-c270-4489-a8ec-88369339e361",
+              "name": "sheet_id",
+              "value": "PASTE_YOUR_GOOGLE_SHEET_ID_HERE",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "b6ea7d18-edf7-4ee6-a9dc-eaa4808a6c83",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        220,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $('Config').first().json.sheet_id }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Settings",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "2ad02c44-fe5b-49a4-abb5-4d8f7dfd8aac",
+      "name": "Read Settings",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        440,
+        0
+      ],
+      "executeOnce": true,
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $('Config').first().json.sheet_id }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Niches",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "f2a99be4-e569-4fdc-a3c1-7372fe22c538",
+      "name": "Read Niches",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        660,
+        0
+      ],
+      "executeOnce": true,
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $('Config').first().json.sheet_id }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Leads",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "1c75bea5-8011-4111-a144-62735bcfe406",
+      "name": "Read Leads",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        880,
+        0
+      ],
+      "executeOnce": true,
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $('Config').first().json.sheet_id }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Suppression",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "a9aa2994-0c49-4194-a5c9-874d239ba8e8",
+      "name": "Read Suppression",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1100,
+        0
+      ],
+      "executeOnce": true,
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $('Config').first().json.sheet_id }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Import",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "a89805e0-c08a-4011-a081-075a623039a5",
+      "name": "Read Import",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1320,
+        0
+      ],
+      "executeOnce": true,
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Generated from src/wf01-import-logic.js by scripts/build.js. Do not edit here;\n// edit the source file, run `npm run build`, and re-import the workflow.\n\n// WF01 Import & Dedupe: pure logic.\n//\n// This file is embedded verbatim into the \"Validate & Dedupe\" Code node of\n// workflows/WF01-import-dedupe.json by `npm run build` (everything after the\n// EXPORT marker is stripped). Keep it free of `require` and of Node-only globals\n// so it runs unchanged inside n8n's Code node sandbox.\n\nconst IMPORT_STATUS = {\n  IMPORTED: 'IMPORTED',\n  INVALID: 'REJECTED_INVALID',\n  DUPLICATE: 'REJECTED_DUPLICATE',\n  SUPPRESSED: 'REJECTED_SUPPRESSED',\n};\n\n// Columns a human fills in on the Import tab. A row with all of these blank is\n// treated as an empty spreadsheet row and ignored.\nconst IMPORT_INPUT_FIELDS = [\n  'company_name', 'website', 'city', 'region', 'contact_name', 'contact_role',\n  'contact_email', 'email_source_url', 'phone', 'discovery_source',\n  'discovery_source_url', 'discovered_at', 'notes',\n];\n\n// docs/02-mvp-architecture.md §6: \"Rejects ... rows without email_source_url\".\n// An email without a source would break the \"never guessed\" rule, so both are required.\nconst REQUIRED_FIELDS = ['company_name', 'website', 'contact_email', 'email_source_url'];\n\n// Two-label public suffixes for the target countries. This is deliberately not\n// the full Public Suffix List; anything not listed is treated as a one-label suffix.\nconst MULTI_LABEL_SUFFIXES = new Set([\n  'co.uk', 'org.uk', 'me.uk', 'ltd.uk', 'plc.uk', 'net.uk', 'ac.uk', 'gov.uk', 'sch.uk', 'nhs.uk',\n  'com.au', 'net.au', 'org.au', 'id.au', 'asn.au',\n  'co.nz', 'org.nz', 'net.nz',\n  'ab.ca', 'bc.ca', 'mb.ca', 'nb.ca', 'nl.ca', 'ns.ca', 'nt.ca', 'nu.ca', 'on.ca', 'pe.ca', 'qc.ca', 'sk.ca', 'yk.ca',\n]);\n\n// Shared mailbox providers. A suppressed address at one of these must never\n// suppress every other user of the provider, and an agency using one gets a warning.\nconst FREE_MAIL_DOMAINS = new Set([\n  'gmail.com', 'googlemail.com', 'hotmail.com', 'hotmail.co.uk', 'outlook.com', 'live.com',\n  'live.co.uk', 'msn.com', 'yahoo.com', 'yahoo.co.uk', 'ymail.com', 'icloud.com', 'me.com',\n  'aol.com', 'aol.co.uk', 'btinternet.com', 'btopenworld.com', 'sky.com', 'virginmedia.com',\n  'talktalk.net', 'ntlworld.com', 'blueyonder.co.uk', 'mail.com', 'gmx.com', 'gmx.co.uk',\n  'protonmail.com', 'proton.me', 'zoho.com', 'bigpond.com', 'optusnet.com.au', 'shaw.ca',\n  'rogers.com', 'sympatico.ca',\n]);\n\nfunction text(value) {\n  if (value === null || value === undefined) return '';\n  return String(value).trim();\n}\n\nfunction isTrue(value) {\n  return value === true || text(value).toUpperCase() === 'TRUE';\n}\n\n// Returns the lower-cased hostname, or '' if the value is not a usable web address.\n// With requireScheme, bare domains like \"example.co.uk\" are rejected.\nfunction parseHost(value, { requireScheme = false } = {}) {\n  const raw = text(value);\n  if (!raw || /\\s/.test(raw)) return '';\n  const match = /^(?:(https?):\\/\\/)?([^/?#]+)(?:[/?#].*)?$/i.exec(raw);\n  if (!match) return '';\n  if (!match[1] && requireScheme) return '';\n  let authority = match[2];\n  if (authority.includes('@')) return '';\n  authority = authority.replace(/:\\d+$/, '');\n  const host = authority.toLowerCase().replace(/\\.$/, '');\n  if (!host.includes('.')) return '';\n  if (/^\\d{1,3}(?:\\.\\d{1,3}){3}$/.test(host)) return '';\n  const labels = host.split('.');\n  const labelOk = (l) => /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(l);\n  if (!labels.every(labelOk)) return '';\n  if (!/^[a-z]{2,63}$/.test(labels[labels.length - 1])) return '';\n  return host;\n}\n\nfunction registrableDomain(host) {\n  const h = text(host).toLowerCase().replace(/^www\\./, '');\n  if (!h) return '';\n  const labels = h.split('.');\n  if (labels.length <= 2) return h;\n  const lastTwo = labels.slice(-2).join('.');\n  return MULTI_LABEL_SUFFIXES.has(lastTwo) ? labels.slice(-3).join('.') : lastTwo;\n}\n\nfunction normaliseEmail(value) {\n  return text(value).replace(/^mailto:/i, '').replace(/\\?.*$/, '').trim().toLowerCase();\n}\n\nfunction isValidEmail(email) {\n  if (!email || email.length > 254) return false;\n  const at = email.lastIndexOf('@');\n  if (at < 1 || at !== email.indexOf('@')) return false;\n  const local = email.slice(0, at);\n  const domain = email.slice(at + 1);\n  if (local.length > 64) return false;\n  if (!/^[a-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\\.[a-z0-9!#$%&'*+/=?^_`{|}~-]+)*$/.test(local)) return false;\n  return domain !== '' && parseHost(domain) === domain;\n}\n\nfunction emailDomain(email) {\n  return email.slice(email.indexOf('@') + 1);\n}\n\n// Google Sheets may return a date cell as a serial day number (days since 1899-12-30).\nfunction normaliseDate(value) {\n  if (typeof value === 'number' && value > 20000 && value < 80000) {\n    return new Date(Date.UTC(1899, 11, 30) + value * 86400000).toISOString();\n  }\n  const raw = text(value);\n  if (!raw) return '';\n  return Number.isNaN(Date.parse(raw)) ? null : raw;\n}\n\nfunction parseSettings(settingsRows) {\n  const settings = {};\n  for (const row of settingsRows || []) {\n    const key = text(row && row.key);\n    if (key) settings[key] = row.value;\n  }\n  return settings;\n}\n\n// Fails closed: an import without a valid, active niche is aborted entirely.\nfunction resolveActiveNiche(settings, nichesRows) {\n  const nicheId = text(settings.ACTIVE_NICHE);\n  if (!nicheId) throw new Error('Settings.ACTIVE_NICHE is missing or blank; import aborted.');\n  const niche = (nichesRows || []).find((n) => n && text(n.niche_id) === nicheId);\n  if (!niche) throw new Error(`ACTIVE_NICHE \"${nicheId}\" has no row in the Niches tab; import aborted.`);\n  if (!isTrue(niche.active)) throw new Error(`Niche \"${nicheId}\" is not active (Niches.active must be TRUE); import aborted.`);\n  if (!text(niche.country)) throw new Error(`Niche \"${nicheId}\" has no country; import aborted.`);\n  return { niche_id: nicheId, country: text(niche.country) };\n}\n\nfunction buildIndexes(leadsRows, suppressionRows) {\n  const leadIds = new Map();\n  const leadEmails = new Map();\n  for (const row of leadsRows || []) {\n    if (!row) continue;\n    const id = text(row.lead_id).toLowerCase();\n    if (id) leadIds.set(id, row.row_number);\n    const email = normaliseEmail(row.contact_email);\n    if (email) leadEmails.set(email, id || '(unknown lead_id)');\n  }\n\n  const suppressedEmails = new Set();\n  const suppressedDomains = new Set();\n  for (const row of suppressionRows || []) {\n    if (!row) continue;\n    const email = normaliseEmail(row.email);\n    if (email) {\n      suppressedEmails.add(email);\n      // Domain-level suppression (architecture §3.4), except for shared mail providers.\n      if (isValidEmail(email)) {\n        const d = registrableDomain(emailDomain(email));\n        if (!FREE_MAIL_DOMAINS.has(d)) suppressedDomains.add(d);\n      }\n    }\n    const domain = registrableDomain(parseHost(row.domain));\n    if (domain && !FREE_MAIL_DOMAINS.has(domain)) suppressedDomains.add(domain);\n  }\n  return { leadIds, leadEmails, suppressedEmails, suppressedDomains };\n}\n\nfunction isEmptyImportRow(row) {\n  return IMPORT_INPUT_FIELDS.every((f) => text(row[f]) === '');\n}\n\nfunction validateRow(row) {\n  const errors = [];\n  for (const field of REQUIRED_FIELDS) {\n    if (!text(row[field])) errors.push(`${field} is required`);\n  }\n\n  const websiteHost = text(row.website) ? parseHost(row.website) : '';\n  if (text(row.website) && !websiteHost) errors.push('website is not a valid web address');\n\n  const email = normaliseEmail(row.contact_email);\n  if (email) {\n    if (/[,;\\s]/.test(email)) errors.push('contact_email must contain exactly one address');\n    else if (!isValidEmail(email)) errors.push(`contact_email \"${email}\" is not a valid email address`);\n  }\n\n  const sourceHost = text(row.email_source_url) ? parseHost(row.email_source_url, { requireScheme: true }) : '';\n  if (text(row.email_source_url) && !sourceHost) {\n    errors.push('email_source_url must be a full http(s):// URL');\n  }\n\n  if (text(row.discovery_source_url) && !parseHost(row.discovery_source_url, { requireScheme: true })) {\n    errors.push('discovery_source_url must be a full http(s):// URL');\n  }\n\n  const discoveredAt = normaliseDate(row.discovered_at);\n  if (discoveredAt === null) errors.push('discovered_at is not a recognisable date (use YYYY-MM-DD)');\n\n  return { errors, websiteHost, email, sourceHost, discoveredAt };\n}\n\nfunction warningsFor({ leadId, email, sourceHost, row }) {\n  const warnings = [];\n  const mailDomain = registrableDomain(emailDomain(email));\n  if (FREE_MAIL_DOMAINS.has(mailDomain)) {\n    warnings.push(`contact_email uses a shared mail provider (${mailDomain}); confirm the agency publishes it`);\n  } else if (mailDomain !== leadId) {\n    warnings.push(`contact_email domain (${mailDomain}) differs from website domain (${leadId})`);\n  }\n  if (registrableDomain(sourceHost) !== leadId) {\n    warnings.push('email_source_url is not on the agency website; the ICP requires the email to be published on its own site');\n  }\n  if (!text(row.city)) warnings.push('city is blank');\n  if (!text(row.discovery_source_url)) warnings.push('discovery_source_url is blank');\n  return warnings;\n}\n\nfunction websiteUrl(raw) {\n  const value = text(raw);\n  return /^https?:\\/\\//i.test(value) ? value : `https://${value}`;\n}\n\n// Main entry point. All inputs are arrays of row objects as returned by the\n// n8n Google Sheets \"Get Row(s)\" operation (each with a `row_number`).\nfunction processImport({ settingsRows, nichesRows, leadsRows, suppressionRows, importRows, now }) {\n  const timestamp = text(now) || new Date().toISOString();\n  const settings = parseSettings(settingsRows);\n  const niche = resolveActiveNiche(settings, nichesRows);\n  const idx = buildIndexes(leadsRows, suppressionRows);\n\n  const leadsToAppend = [];\n  const importUpdates = [];\n  const summary = { imported: 0, invalid: 0, duplicate: 0, suppressed: 0, skippedAlreadyProcessed: 0, skippedEmpty: 0 };\n  const batchIds = new Map();\n  const batchEmails = new Map();\n\n  for (const row of importRows || []) {\n    if (!row || isEmptyImportRow(row)) {\n      summary.skippedEmpty += 1;\n      continue;\n    }\n    if (text(row.import_status)) {\n      summary.skippedAlreadyProcessed += 1;\n      continue;\n    }\n    if (row.row_number === undefined || row.row_number === null || row.row_number === '') {\n      throw new Error('Import row is missing row_number; cannot write its status back. Import aborted.');\n    }\n\n    const update = (status, message, leadId = '') => {\n      importUpdates.push({\n        row_number: row.row_number,\n        import_status: status,\n        import_message: message,\n        lead_id: leadId,\n        processed_at: timestamp,\n      });\n    };\n\n    const v = validateRow(row);\n    if (v.errors.length) {\n      summary.invalid += 1;\n      update(IMPORT_STATUS.INVALID, v.errors.join('; '));\n      continue;\n    }\n\n    const leadId = registrableDomain(v.websiteHost);\n    const mailDomain = registrableDomain(emailDomain(v.email));\n\n    if (idx.suppressedEmails.has(v.email)) {\n      summary.suppressed += 1;\n      update(IMPORT_STATUS.SUPPRESSED, 'contact_email is on the Suppression list', leadId);\n      continue;\n    }\n    if (idx.suppressedDomains.has(leadId) || (!FREE_MAIL_DOMAINS.has(mailDomain) && idx.suppressedDomains.has(mailDomain))) {\n      summary.suppressed += 1;\n      update(IMPORT_STATUS.SUPPRESSED, 'domain is on the Suppression list', leadId);\n      continue;\n    }\n\n    let duplicate = '';\n    if (idx.leadIds.has(leadId)) duplicate = `lead_id ${leadId} already exists in Leads`;\n    else if (idx.leadEmails.has(v.email)) duplicate = `contact_email already belongs to lead ${idx.leadEmails.get(v.email)} in Leads`;\n    else if (batchIds.has(leadId)) duplicate = `same website as Import row ${batchIds.get(leadId)} in this run`;\n    else if (batchEmails.has(v.email)) duplicate = `same contact_email as Import row ${batchEmails.get(v.email)} in this run`;\n    if (duplicate) {\n      summary.duplicate += 1;\n      update(IMPORT_STATUS.DUPLICATE, duplicate, leadId);\n      continue;\n    }\n\n    batchIds.set(leadId, row.row_number);\n    batchEmails.set(v.email, row.row_number);\n\n    leadsToAppend.push({\n      lead_id: leadId,\n      niche_id: niche.niche_id,\n      country: niche.country,\n      company_name: text(row.company_name),\n      website: websiteUrl(row.website),\n      city: text(row.city),\n      region: text(row.region),\n      contact_name: text(row.contact_name),\n      contact_role: text(row.contact_role),\n      contact_email: v.email,\n      email_source_url: text(row.email_source_url),\n      phone: text(row.phone),\n      discovery_source: text(row.discovery_source),\n      discovery_source_url: text(row.discovery_source_url),\n      discovered_at: v.discoveredAt || timestamp,\n      stage: 'New Lead',\n      notes: text(row.notes),\n      last_updated: timestamp,\n    });\n    summary.imported += 1;\n    const warnings = warningsFor({ leadId, email: v.email, sourceHost: v.sourceHost, row });\n    update(IMPORT_STATUS.IMPORTED, warnings.length ? `Warnings: ${warnings.join('; ')}` : 'OK', leadId);\n  }\n\n  return { leadsToAppend, importUpdates, summary, activeNiche: niche.niche_id };\n}\n\n// ---- n8n glue ----\nconst rowsFrom = (nodeName) =>\n  $(nodeName).all().map((item) => item.json).filter((row) => row && Object.keys(row).length > 0);\n\nconst result = processImport({\n  settingsRows: rowsFrom('Read Settings'),\n  nichesRows: rowsFrom('Read Niches'),\n  leadsRows: rowsFrom('Read Leads'),\n  suppressionRows: rowsFrom('Read Suppression'),\n  importRows: rowsFrom('Read Import'),\n  now: new Date().toISOString(),\n});\n\nreturn [{ json: result }];"
+      },
+      "id": "07aeaca7-68d7-426a-a0c0-fd44f98c02a0",
+      "name": "Validate & Dedupe",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1540,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "return $input.first().json.leadsToAppend.map((lead) => ({ json: lead }));"
+      },
+      "id": "e8b4f347-593e-4bb2-a5d0-a60aea569461",
+      "name": "Leads To Append",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1760,
+        -120
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $('Config').first().json.sheet_id }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Leads",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {
+          "cellFormat": "RAW",
+          "handlingExtraData": "error"
+        }
+      },
+      "id": "77e9f866-b9cf-4390-a0fd-7aaf725635cd",
+      "name": "Append to Leads",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1980,
+        -120
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "return $('Validate & Dedupe').first().json.importUpdates.map((update) => ({ json: update }));"
+      },
+      "id": "8a305240-5edc-417b-a2d7-20b0675319a3",
+      "name": "Import Status Updates",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1760,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $('Config').first().json.sheet_id }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Import",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "row_number": "={{ $json.row_number }}",
+            "import_status": "={{ $json.import_status }}",
+            "import_message": "={{ $json.import_message }}",
+            "lead_id": "={{ $json.lead_id }}",
+            "processed_at": "={{ $json.processed_at }}"
+          },
+          "matchingColumns": [
+            "row_number"
+          ],
+          "schema": [
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "readOnly": true,
+              "removed": false
+            },
+            {
+              "id": "import_status",
+              "displayName": "import_status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "import_message",
+              "displayName": "import_message",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "lead_id",
+              "displayName": "lead_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "processed_at",
+              "displayName": "processed_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {
+          "cellFormat": "RAW"
+        }
+      },
+      "id": "86449b73-7161-452e-a03e-8910354325fa",
+      "name": "Update Import Rows",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1980,
+        120
+      ]
+    }
+  ],
+  "connections": {
+    "Run Import": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Read Settings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Settings": {
+      "main": [
+        [
+          {
+            "node": "Read Niches",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Niches": {
+      "main": [
+        [
+          {
+            "node": "Read Leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Leads": {
+      "main": [
+        [
+          {
+            "node": "Read Suppression",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Suppression": {
+      "main": [
+        [
+          {
+            "node": "Read Import",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Import": {
+      "main": [
+        [
+          {
+            "node": "Validate & Dedupe",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate & Dedupe": {
+      "main": [
+        [
+          {
+            "node": "Leads To Append",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Import Status Updates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leads To Append": {
+      "main": [
+        [
+          {
+            "node": "Append to Leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Import Status Updates": {
+      "main": [
+        [
+          {
+            "node": "Update Import Rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true
+  },
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": []
+}

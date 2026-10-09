@@ -172,6 +172,7 @@ Each niche is one row in the `Niches` tab (see `02-mvp-architecture.md`). Only t
 | Field | Value |
 |---|---|
 | `niche_id` | `uk-estate-letting` |
+| `active` | `TRUE` |
 | `country` | `UK` |
 | `timezone` | `Europe/London` |
 | `target_description` | Independent UK estate and letting agencies, limited companies, 1–3 branches |

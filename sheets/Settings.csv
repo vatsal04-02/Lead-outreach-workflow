@@ -1,0 +1,17 @@
+key,value,notes
+SENDING_ENABLED,FALSE,Global kill switch. Anything other than exactly TRUE means no sending.
+TEST_MODE,TRUE,While TRUE every send goes to TEST_RECIPIENT with a [TEST] subject prefix.
+TEST_RECIPIENT,,A FlowHQ inbox for test sends.
+DAILY_SEND_LIMIT,10,Maximum initial emails per day. Raise slowly.
+MIN_MINUTES_BETWEEN_SENDS,8,Spacing between sends.
+SEND_DAYS,"Mon,Tue,Wed,Thu",Days on which sending is allowed.
+SEND_WINDOW_START,09:30,Recipient's time zone (from the niche).
+SEND_WINDOW_END,16:00,Recipient's time zone (from the niche).
+ACTIVE_NICHE,uk-estate-letting,The only niche processed. Must match an active Niches row.
+MIN_QUALIFY_SCORE,60,Starting threshold; tune after seeing real scores.
+RESEARCH_BATCH_SIZE,5,Leads researched per run (free-tier AI limits).
+SENDER_NAME,,Shown in the email.
+SENDER_EMAIL,,Shown in the email.
+BUSINESS_POSTAL_ADDRESS,,Required in the email footer.
+PRIVACY_URL,,Shown in the email footer.
+WEBSITE_URL,,Shown in the email footer.
