@@ -1,51 +1,53 @@
-# Compliance guardrails
+# Compliance guardrails (multi-country)
 
-> **This is not legal advice.** It's a working summary to design the system safely. Before scaling beyond a small test, get a short review from someone qualified, especially on UK GDPR legitimate interests and on India's DPDP Act, which may apply to data FlowHQ processes in India.
+> **This is not legal advice.** It's a working summary for designing the system safely. Before live sending in **any** country, get a short review from someone qualified. The system enforces this: WF04 refuses live email for a campaign until its `outreach_basis_reviewed` is set to `TRUE`.
 
 ## 1. Country summary (B2B cold email)
 
-| | UK | US | Canada | Australia |
-|---|---|---|---|---|
-| Law | PECR + UK GDPR | CAN-SPAM | CASL | Spam Act 2003 |
-| Cold B2B email allowed? | Yes, to **corporate subscribers** (limited companies, LLPs, public bodies). **Not** to sole traders or partnerships without consent. | Yes (opt-out model) | Only with consent. Implied consent can apply when the address is **conspicuously published**, there's no statement refusing messages, and the message is relevant to the person's business role. | Only with consent. Inferred consent can apply when the address is **conspicuously published**, there's no statement refusing messages, and the message is relevant to the role. |
-| Must identify sender | Yes | Yes, with accurate headers and a non-deceptive subject | Yes, with name and contact info | Yes |
-| Postal address in email | Recommended | **Required** (a valid physical postal address) | Required (mailing address plus another contact method) | Sender contact info required |
-| Unsubscribe | Simple opt-out in every message | Must work for 30 days; honour within 10 business days | Must work for 60 days; honour within 10 business days | Must be functional; honour within 5 business days |
-| Extra | UK GDPR: legitimate interests assessment; tell people where you got their data (a privacy notice link in the first email) | — | Heavy penalties | — |
+| | UK | US | Canada | Australia | India | EU / EEA |
+|---|---|---|---|---|---|---|
+| Main rules | PECR + UK GDPR | CAN-SPAM | CASL | Spam Act 2003 | DPDP Act 2023 (personal data) + IT Act; no CAN-SPAM-style email statute | GDPR + national ePrivacy laws |
+| Cold B2B email allowed? | Yes to **corporate subscribers** (Ltd, LLP, plc, public bodies); **not** to sole traders/partnerships without consent | Yes (opt-out model) | Only with consent; implied consent can apply to a **conspicuously published** business address, with no "no messages" statement, relevant to the role | Only with consent; inferred consent can apply to a conspicuously published business address, relevant to the role | Not specifically prohibited for email, but a named person's email is personal data under DPDP, so purpose, notice and data handling need review | **Varies by country** (e.g. Germany is very strict); always needs country-specific review |
+| Sender identity | Required | Required, accurate headers, non-deceptive subject | Name + contact info | Required | Recommended | Required |
+| Postal address | Recommended | **Required** | Required | Sender contact info | Recommended | Usually required |
+| Opt-out | In every message | Works 30 days; honour ≤ 10 business days | Works 60 days; honour ≤ 10 business days | Functional; honour ≤ 5 business days | Honour promptly | Honour immediately |
+| Before going live | Legitimate Interests Assessment; privacy notice link | — | Check the implied-consent conditions per lead | Check the inferred-consent conditions | Legal review of DPDP obligations | Legal review per country |
+
+**Requires legal review before live sending:** every campaign (the default `outreach_basis_reviewed = FALSE`), and especially Canada, Australia, India, any EU country, and any campaign whose prospects are mostly individuals (sole traders, self-employed professionals). Where the basis is unclear, leave `outreach_basis_reviewed = FALSE`: test-mode sending still works, so drafts can be reviewed safely.
+
+**Healthcare prospects:** outreach uses only the business's published contact details, never patient data. Delivering automation for healthcare clients later involves health-data law (HIPAA, UK GDPR special-category data, DPDP), which needs its own review and contracts.
 
 ## 2. FlowHQ rules (enforced by the system, wherever it can enforce them)
 
-1. **Never invent or guess email addresses.** Every `contact_email` needs an `email_source_url` showing where the business published it. WF01 enforces this.
-2. **UK: verify corporate status** on Companies House before qualifying. WF02 enforces this as a hard gate.
-3. **Respect "no solicitation" statements** on websites. This is a hard gate.
-4. **Every email contains:** the sender's name, FlowHQ's legal name, a postal address, the reason we're contacting them, a simple opt-out ("reply unsubscribe"), and the privacy notice link. WF03's checks reject drafts that are missing any of these.
-5. **Honour opt-outs immediately.** Our target is the same day and at most 1 business day, which beats every country's deadline. Opt-outs suppress both the email and the domain, permanently.
-6. **One initial email per business.** No automated follow-ups in the MVP.
-7. **Accurate content.** No fake case studies, testimonials, or statistics, and no misleading subject lines. WF03 checks for some of this, and the human approver checks the rest.
-8. **No health or special-category data.** This is why healthcare is deferred.
-9. **Data minimisation and retention.** Store business contact data only. Delete or anonymise leads that never replied after 12 months (proposed). Keep the suppression list indefinitely, since it's needed to keep honouring opt-outs.
-10. **No deceptive research.** No fake enquiries and no mystery shopping.
-11. **Platform terms.** No scraping Google Maps, Rightmove, Zoopla, LinkedIn, or similar sites. Manual browsing and the free official Companies House API are fine.
+1. **Never invent or guess email addresses.** Imported leads need `contact_email` + `email_source_url` (WF01). For discovered leads, WF02 takes an address only from the business's own pages, on its own domain (or a shared mailbox it publishes there), and records the page. It never takes addresses from OpenStreetMap or the AI.
+2. **UK legal basis (PECR).** For UK campaigns, a lead whose website doesn't state a Ltd/LLP/plc legal form goes to `Needs Review` (it may be a sole trader or partnership, who need prior consent). No company registry is queried: the legal form is what the business states publicly, and a human confirms it where needed.
+3. **Respect "no solicitation" statements** on websites (hard gate).
+4. **Every email contains:** the sender's name, FlowHQ's legal name, a postal address, the reason for contact, a simple opt-out ("reply unsubscribe") and the privacy notice link. WF03 and WF04 reject drafts that lack any of these.
+5. **Honour opt-outs immediately.** WF05 suppresses the email and company domain the same day (while the laptop is on), which is well within every listed deadline. Suppression is permanent.
+6. **One initial email per business.** No automated follow-ups.
+7. **Accurate content.** No fake case studies, testimonials or statistics; numbers and quotes must come from stored evidence; subjects can't pose as replies; a human approves every email.
+8. **No special-category data** is collected about prospects.
+9. **Data minimisation and retention.** Only business contact data and public business facts are stored. Email addresses and phone numbers are redacted from text sent to the AI. Delete or anonymise leads that never replied after 12 months (manual). Keep Suppression indefinitely.
+10. **No deceptive research.** WF02 only issues GET requests to public pages; it never submits forms or fake enquiries.
+11. **Platform terms and robots.** Discovery uses OpenStreetMap open data (ODbL, attributed). WF02 honours robots.txt, fetches at most 3 pages per business with an identifying User-Agent, and never fetches social or directory profiles (Facebook, Instagram, LinkedIn, Yell, Justdial…). No scraping of Google Maps, property portals or LinkedIn; no bypassing CAPTCHAs, logins or paywalls.
+12. **No evasion.** One sending identity, daily caps, no spam-filter tricks, no identity rotation, no leaked or bought lists.
 
-## 3. Documents FlowHQ needs before Phase 5 (sending)
+## 3. Documents FlowHQ needs before live sending
 
-- [ ] A short **privacy notice** (who FlowHQ is, what data we hold, where it came from, why (legitimate interests), how long we keep it, how to object, and a contact address), published at a stable URL.
-- [ ] A one-page **Legitimate Interests Assessment** for UK outreach. I can draft a template in Phase 5.
-- [ ] FlowHQ's **legal name and postal address** for the email footer.
+- [ ] A short **privacy notice** (who FlowHQ is, what data is held, where it came from, why, how long it's kept, how to object, and a contact address), published at `PRIVACY_URL`.
+- [ ] A **legal-basis review per campaign country**. Then set that campaign's `outreach_basis_reviewed = TRUE`. For the UK, this is a one-page Legitimate Interests Assessment.
+- [ ] FlowHQ's **legal name and postal address** in Settings.
 
-## 4. Where each rule is enforced in the implemented system
+## 4. Where each rule is enforced
 
 | Rule (§2) | Enforced by |
 |---|---|
-| 1. Never invent or guess emails | WF01 requires `contact_email` + `email_source_url`. WF02 never changes the email. |
-| 2. Verify UK corporate status | WF02 registry router: GB leads are checked on Companies House (active ltd/llp/plc only). For a niche that requires a legal entity, only `VERIFIED`/`MANUAL_VERIFIED` leads qualify; `UNVERIFIED` never does. US and India adapters aren't live. |
-| 3. No-solicitation statements | WF02 deterministic detection plus AI quotes that are verified verbatim. Both are hard gates. |
-| 4. Sender identity, legal name, address, reason, opt-out, privacy link | Template footer generated by code (`src/lib/drafting.js`). WF03 and WF04 refuse to work while any of these settings is blank, and reject edited footers. |
-| 5. Honour opt-outs immediately | WF05 (every 15 min, keyword rules) writes Suppression **before** anything else. Every workflow checks Suppression (email + company domain). **Limitation:** this only happens while the laptop is on. |
-| 6. One initial email per business | WF04 checks Send_Log email and domain history and the lock. No follow-up workflow exists. |
-| 7. Accurate content | Banned-claims list; numbers and quotes must come from stored evidence; subjects can't pose as replies; human approval of every email. |
-| 8. No health data | Healthcare niche not configured. |
-| 9. Retention | **Manual:** delete or anonymise non-responding leads after 12 months. Never delete Suppression. |
-| 10. No deceptive research | WF02 only reads public pages (GET requests); it never submits forms. |
-| 11. Platform terms | No scraping of Google Maps, portals or LinkedIn; only the agency's own site and the official Companies House API. |
-
+| 1. No guessed emails | WF01 required fields; WF02 `chooseContact` (own pages, own domain; third-party and AI-supplied addresses ignored). |
+| 2. UK legal basis | WF02: UK campaigns without a stated corporate form → `Needs Review`. WF04: live sending needs `outreach_basis_reviewed = TRUE`. |
+| 3. No-solicitation | WF02 deterministic detection, plus verified AI quotes → Disqualified. |
+| 4. Footer contents | `src/lib/drafting.js` template footer; WF03 and WF04 refuse blank sender settings and edited footers. |
+| 5. Opt-outs | WF05 keyword rules → Suppression first; every workflow checks Suppression (email + company domain). |
+| 6. One email per business | WF04 Send_Log email/domain history and lock; no follow-up workflow. |
+| 7. Accurate content | Banned-claims list, evidence-only numbers and quotes, human approval. |
+| 9. Minimisation | Redaction before AI; reply text never sent to AI. |
+| 10–11. Research conduct | WF02 robots.txt gate, page cap, profile-page skip, rate limits. |

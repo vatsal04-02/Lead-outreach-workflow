@@ -14,7 +14,7 @@
 | Phase 1 strategy, ICP, offer | Documented; FlowHQ sign-off still pending | `docs/01–03` |
 | Niche smoke test (20 agencies) | **Not run.** Research template and 22 *unverified* candidate names prepared | `docs/05-niche-smoke-test.md`, `research/` |
 | Offer feasibility review | Documented | `docs/06-offer-review.md` |
-| Sheet templates (8 tabs) | Implemented | `sheets/*.csv`, generated from `src/schema.js` |
+| Sheet templates (9 tabs since Discovery_Log was added) | Implemented | `sheets/*.csv`, generated from `src/schema.js` |
 | WF00 Error Handler | Implemented. Engine-tested in n8n 2.42.6 with Sheets and Gmail stubbed. **Not yet run against your Google account.** | `workflows/WF00-error-handler.json` |
 | WF01 Import & Dedupe | Implemented. Unit-tested and engine-tested with Sheets stubbed. **Not yet run against your Google Sheet.** | `workflows/WF01-import-dedupe.json` |
 | WF02–WF06 | Not started | — |

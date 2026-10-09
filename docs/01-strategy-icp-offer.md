@@ -33,7 +33,7 @@ The brief lists five candidate segments across four countries. Testing all of th
 
 | Country | B2B cold email rule (summary, not legal advice) | Time zone overlap with India | Verdict |
 |---|---|---|---|
-| **UK** | Allowed to **corporate subscribers** (limited companies and LLPs) without prior consent, as long as you identify yourself and offer an opt-out (PECR + UK GDPR legitimate interests). Companies House offers a **free** public API to check whether a business is a limited company. | **Good.** UK business hours are about 13:30–22:30 IST. | **Recommended first.** |
+| **UK** | Allowed to **corporate subscribers** (limited companies and LLPs) without prior consent, as long as you identify yourself and offer an opt-out (PECR + UK GDPR legitimate interests). Most limited companies state "Ltd" or their company number on their website; the system relies on that statement and sends unclear cases to human review. | **Good.** UK business hours are about 13:30–22:30 IST. | **Recommended first.** |
 | US | Opt-out model (CAN-SPAM). Requires a postal address and an opt-out. | **Poor.** US business hours are roughly evening to early morning IST. | Second option. |
 | Canada | CASL is strict. Cold B2B email relies on narrow "implied consent" (an address that's conspicuously published, relevant to the person's role, and with no "no solicitation" statement). Penalties are large. | Poor | Later. |
 | Australia | The Spam Act requires consent. It can be inferred from a conspicuously published business address under similar narrow conditions. | Good (AEST is about IST + 4.5h) | Later. |
@@ -42,7 +42,7 @@ The brief lists five candidate segments across four countries. Testing all of th
 
 **Why:**
 1. **Concrete pain that n8n can actually solve.** Enquiries arrive by email from portals (Rightmove, Zoopla, OnTheMarket) and website forms. Each one needs a reply, logging, routing to a negotiator, and chasing. You can explain this in one sentence and demonstrate it in five minutes.
-2. **The legal path is clear.** B2B email to limited companies is allowed under PECR with identification and an opt-out. Companies House lets us **verify** each prospect is a limited company for free, before we email them.
+2. **The legal path is clear.** B2B email to limited companies is allowed under PECR with identification and an opt-out. Agencies usually state their legal form on their website; leads that don't go to human review before anyone emails them.
 3. **Workable hours.** Sending and calls happen in your afternoon and evening, while your laptop is on.
 4. **Contacts are public.** Agencies publish office and branch email addresses on their own websites. We never have to guess an email.
 
@@ -57,7 +57,7 @@ The brief lists five candidate segments across four countries. Testing all of th
 | Attribute | Include | Exclude |
 |---|---|---|
 | Business type | Independent estate agent and/or letting agent | National chains and corporate-owned franchise branches (they have central procurement and IT) |
-| Legal entity | **UK limited company or LLP**, verified on Companies House as "active" | Sole traders and partnerships (PECR treats them as individuals, so consent would be required), and dissolved companies |
+| Legal entity | **UK limited company or LLP**, as stated on the agency's own website (a human confirms unclear cases) | Sole traders and partnerships (PECR treats them as individuals, so consent would be required), and dissolved companies |
 | Size | Roughly 1–3 branches, about 3–25 staff (estimated from the team page) | Single-person operations with no enquiry volume |
 | Digital presence | Own website with listings or an enquiry/valuation form, and listings on at least one portal | No website |
 | Contact channel | An email address **published on the agency's own website** (role addresses like `info@` or `lettings@` are fine). A named person's email **only** if the company itself publishes it. | No published email, or a website that says it doesn't want unsolicited sales contact |
@@ -123,7 +123,7 @@ Honesty rules for all outreach (later enforced in the draft checks):
 Before we build anything, check the niche against reality:
 
 1. Manually find **20 independent UK estate and letting agencies** (from Google searches or portal branch directories, browsing only with no scraping) in 2–3 towns of your choice.
-2. For each one, note: the website, whether it publishes an email address (and where), whether it's a limited company (search on the Companies House website), and any public pain signal from §3.
+2. For each one, note: the website, whether it publishes an email address (and where), whether its website states it is a limited company ("Ltd", "LLP" or a company number), and any public pain signal from §3.
 3. Record these in a scratch spreadsheet. They become the **first test records for Phase 2**.
 
 **Pass criteria (proposed):**
@@ -165,9 +165,9 @@ Rules: under about 120 words in the body, one service only, one question as the 
 
 ---
 
-## 8. Configurable niche definition
+## 8. Campaign definition (configurable targeting)
 
-Each niche is one row in the `Niches` tab (see `02-mvp-architecture.md`). Only the niche named in `Settings.ACTIVE_NICHE` is processed. Test 1's row:
+Each campaign is one row in the `Niches` tab (see `02-mvp-architecture.md`). Only the campaign named in `Settings.ACTIVE_NICHE` is processed. Test 1's row:
 
 | Field | Value |
 |---|---|
@@ -178,15 +178,22 @@ Each niche is one row in the `Niches` tab (see `02-mvp-architecture.md`). Only t
 | `target_description` | Independent UK estate and letting agencies, limited companies, 1–3 branches |
 | `decision_maker_roles` | Director; Owner; Branch Manager; Lettings Manager; Office Manager |
 | `pain_signals` | 24h reply promise; phone-only viewings; office closed evenings/weekends; shared generic inbox; hiring admin staff; reviews citing slow replies |
-| `service_angle` | Enquiry Autopilot: instant acknowledgement, logging, routing, and chasers for portal and website enquiries |
+| `service_angle` | Enquiry Autopilot: acknowledgement within minutes, logging, routing, and chasers for portal and website enquiries |
 | `cta` | Free 15-minute enquiry workflow review |
 | `exclusions` | National chains; corporate franchise branches; sole traders/partnerships; no published email; "no solicitation" notice |
-| `legal_entity_required` | `limited_company_or_llp` |
 | `template_id` | `uk-estate-letting-v1` |
+| `industries` | `estate_agent; property_management` (or `all`; names in `src/lib/categories.js`) |
+| `regions` | `Reading; Leicester; Norwich` (OpenStreetMap administrative area names) |
+| `discovery_provider` | `osm_overpass` (or blank for manual import only) |
+| `osm_tag_filters` | *(blank; optional override such as `office=lawyer; craft=plumber`)* |
+| `outreach_language` | `en` |
+| `max_discovered_per_run` | `20` |
+| `min_qualify_score` | *(blank = use `Settings.MIN_QUALIFY_SCORE`)* |
+| `required_evidence` | `website; published_email; verified_opportunity` |
+| `size_criteria` | `1-3 branches` (judged only when the website states it) |
+| `outreach_basis_reviewed` | `FALSE` until the legal basis for this country has been reviewed (`03-compliance-guardrails.md`); WF04 won't send live email before then |
 
-Placeholder rows for `uk-marketing-agency`, `us-real-estate-brokerage`, and `uk-physio-clinic` can be added later with `active = FALSE`.
-
----
+The template rows also include inactive example campaigns for healthcare in Pune (India) and home services in Austin (US), using the industry-independent `general-automation-v1` template. Industries and countries are configuration, not code.
 
 ## 9. Decisions needed from FlowHQ before Phase 2
 

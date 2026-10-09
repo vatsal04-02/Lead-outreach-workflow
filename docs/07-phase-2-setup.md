@@ -3,7 +3,7 @@
 > **Update (all phases implemented):** this guide still covers Phase 2. The full sequence for every workflow, including the two Settings rows added since Phase 2 (`BUSINESS_LEGAL_NAME`, `LIVE_RECIPIENT_ALLOWLIST`), is in `09-setup-and-go-live.md`. If you import the CSVs now, `sheets/Settings.csv` already contains those rows. In n8n, set every workflow's Error workflow to WF00.
 
 **What's verified so far:**
-- The workflow logic passes the unit and schema tests (`npm test`; 154 tests in total now).
+- The workflow logic passes the unit and schema tests (`npm test`; 161 tests in total now).
 - The workflow files import into n8n **2.41.6** and 2.42.6 and run correctly in their engines with Google Sheets and Gmail **stubbed**.
 
 **What isn't verified yet:** real reads and writes against your Google Sheet, and real Gmail alerts. That's what steps 6–7 below test. Phase 2 is complete only when every test in step 7 matches.

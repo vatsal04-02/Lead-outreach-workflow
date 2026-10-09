@@ -6,10 +6,10 @@ Every workflow below is **generated** by `npm run build` from the tested source 
 
 | ID | File | Trigger | Phase | Responsibility |
 |---|---|---|---|---|
-| WF00 | `workflows/WF00-error-handler.json` | Error Trigger | 2 | Turns any production failure into an `Errors` row and an alert email. |
+| WF00 | `workflows/WF00-error-handler.json` | Error Trigger | 2 | Turns any production failure into an `Errors` row and an alert email; a failed alert email is logged as its own `Errors` row. |
 | — | `workflows/WF00-selftest-trigger.json` | Schedule (1 min) | 2 | Temporary helper that fails on purpose to test WF00. Delete it after the test. |
 | WF01 | `workflows/WF01-import-dedupe.json` | Manual | 2 | Validates and normalises `Import` rows, dedupes them, enforces suppression, and appends `New Lead` rows. |
-| WF02 | `workflows/WF02-research-qualify.json` | Manual | 3 | Researches each lead's website, checks Companies House, asks Gemini for a score, verifies its quotes, applies the gates, and sets Qualified, Disqualified or Researched. |
+| WF02 | `workflows/WF02-research-qualify.json` | Manual | 3 | **Discovers** businesses through OpenStreetMap (optional, rotating, logged), **researches** each lead's website (robots.txt, ≤3 pages), asks Gemini for evidence-backed automation opportunities, verifies every excerpt, extracts the published contact deterministically, applies the gates, and sets Qualified, Needs Review or Disqualified. Never sends email. |
 | WF03 | `workflows/WF03-draft-generation.json` | Manual | 4 | Builds a template draft with one AI sentence, checks it, and moves the lead to `Draft Ready` / `Pending`. Also re-checks drafts you've edited. |
 | WF04 | `workflows/WF04-approved-sender.json` | Schedule (10 min) | 5 | Sends at most one approved email per run, behind every safety gate. |
 | WF05 | `workflows/WF05-replies-bounces.json` | Schedule (15 min) | 6 | Detects replies, opt-outs, bounces and auto-replies; adds Suppression rows; updates reply fields. |
@@ -21,11 +21,12 @@ Approval (Phase 5) is **done by a human** in the Sheet, not by a workflow. Autom
 
 ```
                     ┌────────────── Google Sheet "FlowHQ Outreach" (source of truth) ──────────────┐
-                    │ Settings  Niches  Import  Leads  Suppression  Send_Log  Errors  Metrics       │
+                    │ Settings  Niches  Import  Leads  Suppression  Send_Log  Errors  Metrics  Discovery_Log │
                     └──▲──────────▲───────▲───────▲──────────▲───────────▲────────▲────────▲───────┘
  human research ──► Import        │       │       │          │           │        │        │
                     │  WF01 ──────┴───────┴──► Leads (New Lead)          │        │        │
-                    │  WF02 ──► website (HTTP) ─► Companies House API ─► Gemini API ─► Leads (scores)
+                    │  WF02 ──► OpenStreetMap Overpass ─► Leads (New Lead, DISCOVERED) + Discovery_Log
+                    │  WF02 ──► robots.txt ─► website (≤3 pages) ─► Gemini API ─► Leads (research, scores)
                     │  WF03 ──► Gemini API ─► Leads (draft, Draft Ready/Pending)          │
  human approval ──► Leads (stage Approved, approval_status Approved)                      │
                     │  WF04 ──► lock Leads ─► re-read ─► Gmail send ─► Leads + Send_Log    │
@@ -39,8 +40,8 @@ Approval (Phase 5) is **done by a human** in the Sheet, not by a workflow. Autom
 | Google Sheets API | all | Google Sheets OAuth2 API | **No.** Stubbed in tests. |
 | Gmail API (send) | WF00, WF04 | Gmail OAuth2 API | **No.** Your Gmail OAuth is currently broken, and Gmail was stubbed. |
 | Gmail API (read) | WF05 | Gmail OAuth2 API | **No.** Stubbed. |
-| Companies House public data API (free) | WF02 (GB leads only) | Basic Auth (API key as user, blank password) | **No.** Stubbed (and the host is blocked in the build environment). |
-| US / India company registries | WF02 adapters (designed only) | none configured | **Not live.** No official source or credentials confirmed; never queried. |
+| OpenStreetMap Overpass API (free, keyless; `docs/11`) | WF02 discovery | none | **No.** Stubbed; the host is blocked in the build environment. |
+| robots.txt of prospect sites | WF02 | none | **No.** Stubbed. |
 | Google Gemini API (free tier) | WF02, WF03 | Header Auth, `x-goog-api-key` | **No.** Stubbed. |
 | Prospect websites | WF02 | none | **No.** Stubbed. |
 
@@ -49,8 +50,11 @@ Approval (Phase 5) is **done by a human** in the Sheet, not by a workflow. Autom
 | Module | Contents | Used by |
 |---|---|---|
 | `src/lib/common.js` | Domain and email parsing, suppression index, settings, active-niche resolution (fails closed), time-zone helpers, evidence format, item pairing | all |
-| `src/lib/gemini.js` | Request URL and body; tolerant JSON parsing (never throws) | WF02, WF03 |
-| `src/lib/drafting.js` | Versioned template `uk-estate-letting-v1`, legal footer, draft checks | WF03, WF04 |
+| `src/lib/gemini.js` | Request URL (configurable model and endpoint) and body; tolerant JSON parsing (never throws) | WF02, WF03 |
+| `src/lib/discovery.js` | OpenStreetMap/Overpass discovery: search planning and rotation, query building, normalisation, dedupe | WF02 |
+| `src/lib/categories.js` | Industry → OSM tag mapping (configuration data) | WF02 |
+| `src/lib/robots.js` | robots.txt parsing and matching | WF02 |
+| `src/lib/drafting.js` | Versioned templates `uk-estate-letting-v1` and the industry-independent `general-automation-v1`, opportunity phrases, legal footer, draft checks | WF03, WF04 |
 | `src/schema.js` | Every tab's exact columns, plus the Settings and Niches seed rows | build, tests |
 
 ## 4. Per-workflow reference
@@ -58,7 +62,7 @@ Approval (Phase 5) is **done by a human** in the Sheet, not by a workflow. Autom
 ### WF00 Error Handler
 - **Inputs:** Error Trigger payload. **Outputs:** an `Errors` row (`timestamp, workflow, node, lead_id, message`) and an email to Config `alert_email`.
 - **Dependencies:** Sheets, Gmail (optional until Gmail works; deactivate **Email Alert** until then).
-- **Failure handling:** the Sheets append and the email both continue on error, so one can't block the other. n8n doesn't run error workflows for **manual** executions.
+- **Failure handling:** the Sheets append and the email both continue on error, so one can't block the other. A failed alert email goes down the error output and is written to `Errors` as its own row ("Alert email NOT sent …"), so an alert is never assumed sent. n8n doesn't run error workflows for **manual** executions.
 - **Idempotency:** one row per failure. **Tests:** `tests/wf00-format-error.test.js`, engine "WF00".
 
 ### WF01 Import & Dedupe
@@ -67,40 +71,41 @@ Approval (Phase 5) is **done by a human** in the Sheet, not by a workflow. Autom
 - **Failure handling:** a missing or inactive niche aborts the run with no writes. Leads are appended **before** statuses are written, so a failed append leaves the rows to retry.
 - **Tests:** `tests/wf01-import-logic.test.js`, engine "WF01 …".
 
-### WF02 Research & Qualify
-- **Inputs:** `Settings` (`RESEARCH_BATCH_SIZE`, `MIN_QUALIFY_SCORE`, `ACTIVE_NICHE`), `Niches`, `Leads` (stage `New Lead`, plus its **header row**), `Suppression`; the website; the company registry for the lead's country; Gemini.
-- **Outputs (Leads, matched on `lead_id`):** `company_number, company_status, legal_entity_type, stage, fit/problem/contact/channel/total_score, qualification_reasoning, evidence, opportunity_hypothesis, disqualify_reason, contact_name, contact_role, last_updated, last_error`, plus `registry_country, registry_provider, registry_status, registry_source_url, registry_checked_at, registry_match_rationale`. Every update writes all of these, keeping unchanged values.
-- **Fails closed:** WF02 refuses to run (nothing fetched, nothing written) if the Leads header row lacks any column it writes, because Google Sheets would silently drop those values.
-- **Registry verification (`src/lib/registries.js`), kept separate from website evidence:**
-
-  | Lead `country` | Adapter | Behaviour |
-  |---|---|---|
-  | UK / GB | Companies House (live) | Looks up by company number (entered by you, or found on the website footer); otherwise by exact-name search. |
-  | US | `us_state_registry` (**not live**) | No request. Always `UNVERIFIED`, with the reason. |
-  | IN | `mca_india` (**not live**) | No request. Always `UNVERIFIED`, with the reason. |
-  | anything else | none | `UNVERIFIED`. |
-
-  - `VERIFIED`: an active, eligible record matched by number, or by a unique exact name.
-  - `INELIGIBLE`: a record identified **by company number** that says the company isn't active, or isn't a limited company or LLP. The lead is Disqualified.
-  - `UNVERIFIED`: an API failure, no match, an ambiguous match, a single name match that is inactive (it may be a different entity), an unsupported country, an adapter that isn't live, or no name or number. This is never read as "does not exist".
-  - `MANUAL_VERIFIED`: set by you, with `registry_source_url` and `registry_match_rationale`. WF02 keeps your values.
-  - If the niche's `legal_entity_required` is set (Test 1: `limited_company_or_llp`), only `VERIFIED` or `MANUAL_VERIFIED` can qualify; `UNVERIFIED` goes to `Researched`. If it's blank or `none`, `UNVERIFIED` doesn't block, and the reasoning notes it.
-- **Rules:**
-  - Fetches at most 3 pages per lead, one request per second, with an identifying User-Agent. The registry lookup runs even when the website fetch fails.
-  - A Gemini quote counts only if it appears **verbatim** on the page it cites. `problem_score` is capped at 1 without a verified quote and at 2 with one.
-  - `channel_score` is computed by code (role vs personal address). `contact_score` is capped by what is verified.
-  - A no-solicitation notice, a verified exclusion, or no published email is a hard gate.
-  - `score_override` replaces the computed total when it's filled in.
+### WF02 Discovery, Research & Qualify
+- **Inputs:** `Settings` (`RESEARCH_BATCH_SIZE`, `MIN_QUALIFY_SCORE`, `ACTIVE_NICHE`, `DISCOVERY_*`), the active campaign row in `Niches`, `Leads` (plus its **header row**), `Suppression`, `Discovery_Log`; OpenStreetMap; prospect websites; Gemini.
+- **Fails closed:** refuses to run (nothing fetched, nothing written) if the Leads header lacks any column it writes, because Google Sheets would silently drop those values. Invalid discovery configuration stops the run with a clear message.
+- **Discovery** (only when `DISCOVERY_ENABLED = TRUE` and the campaign's `discovery_provider = osm_overpass`): see `11-discovery-provider.md`.
+  - Appends `New Lead` rows (`discovery_status = DISCOVERED`, `research_status = PENDING`, OSM source URL, no contact details).
+  - Appends one `Discovery_Log` row per search.
+  - Leads are appended before the log, so a failed log write only repeats a search, never a lead.
+- **Research outputs (Leads, matched on `lead_id`):**
+  - core fields: `company_number, legal_entity_type, stage, fit/problem/contact/channel/total_score, qualification_reasoning, evidence, opportunity_hypothesis, disqualify_reason, contact_name, contact_role`;
+  - contact fields: `contact_email, email_source_url`, set only when blank;
+  - new research fields: `business_category, services_summary, research_status, researched_at, evidence_quality, opportunities, contact_readiness`;
+  - bookkeeping: `last_updated, last_error`.
+  - Every update writes all of these, keeping unchanged values.
+- **Research steps:**
+  1. robots.txt: disallowed sites go to Needs Review, and an unavailable robots.txt counts as no restriction.
+  2. Homepage, plus at most one contact page and one about/services page, on the business's own site and robots-allowed.
+  3. The text is converted, with emails and phone numbers redacted before the AI sees it.
+  4. Gemini proposes up to 3 opportunities. Each must cite a **verbatim** excerpt on the cited page.
+  5. Code computes the scores, evidence quality and contact readiness, then applies the gates (architecture §5).
 - **Outcomes:**
-  - `Qualified`.
-  - `Disqualified`, with the reason.
-  - `Researched`, when the niche requires a legal entity and registration is `UNVERIFIED`. For GB, enter `company_number`; for any country, you can instead set `registry_status = MANUAL_VERIFIED` with a source URL and rationale. Then set the stage back to `New Lead` and re-run.
-  - Stage unchanged with `last_error`, on a website or AI failure. These leads are retried, after fresh leads.
-- **Idempotency:** only `New Lead` rows are processed.
-- **Tests:** `tests/wf02-research-logic.test.js`, `tests/registries.test.js`, engine E2E steps 2–3, and the engine checks for an un-migrated header and for US/IN routing.
+  - `Qualified`;
+  - `Needs Review` (missing or weak evidence, no published email, prompt injection, a profile page, robots, the UK legal-form rule);
+  - `Disqualified` (no-solicitation, a verified exclusion, suppressed, or below the minimum score with adequate evidence);
+  - unchanged with `research_status = RETRY` (website or AI failure; retried later, after fresh leads).
+- **No company registry** is used, and no registry key is needed.
+- **Prompt injection:** page text is fenced as untrusted data, and the model cannot choose URLs, contacts or gates. An excerpt that looks like an instruction never counts, and suspicious pages force `Needs Review`.
+- **Idempotency:** only `New Lead` rows are researched. Discovery dedupes on `businessKey` against Leads and within the batch, and rotates searches through `Discovery_Log`.
+- **Tests:** `tests/wf02-research-logic.test.js`, `tests/discovery.test.js`, engine E2E steps 1–3, the multi-country check, and the un-migrated-header check.
 
 ### WF03 Draft Generation
-- **Inputs:** `Settings` (sender identity), `Niches` (`template_id`, `cta`), `Leads`, `Suppression`; Gemini.
+- **Inputs:** `Settings` (sender identity), `Niches` (`template_id`, `cta`, `outreach_language`), `Leads` (incl. `opportunities`), `Suppression`; Gemini (`gemini_model`, `ai_endpoint` in Config).
+- **Templates:**
+  - `uk-estate-letting-v1` is for the existing UK campaign.
+  - `general-automation-v1` is industry-independent. It builds the email around the lead's top **verified** opportunity, using fixed FlowHQ wording per opportunity type, and refuses to draft without one.
+  - WF03 refuses to run if the campaign's `outreach_language` doesn't match the template's language (only English templates exist).
 - **Outputs:**
   - New drafts: `template_id, email_subject, email_body, draft_generated_at, draft_check_result, stage, approval_status, last_updated, last_error`.
   - Re-checks: `draft_check_result, last_updated, last_error`.
@@ -123,6 +128,7 @@ In `Leads`, after reading the draft: set `approval_status = Approved`, `approved
 - **Gates, in order:**
   1. `SENDING_ENABLED` exactly `TRUE`.
   2. Valid configuration (anything invalid throws, which triggers a WF00 alert).
+  2b. In live mode only: the campaign's `outreach_basis_reviewed` is exactly `TRUE` (legal review done for that country).
   3. `SEND_DAYS`, and the window in the niche time zone.
   4. Daily cap (counting Send_Log **and** Leads).
   5. Failure breaker: 2 failed attempts per day.
@@ -156,7 +162,7 @@ In `Leads`, after reading the draft: set `approval_status = Approved`, `approved
 ### WF06 Daily Metrics
 - **Output:** one `Metrics` row per date (in the Config `metrics_timezone`, default `Asia/Kolkata`) holding **cumulative totals**. The difference between two rows is the activity in between. Re-running replaces that day's row.
 - **Definitions:**
-  - `new_leads` = all leads.
+  - `new_leads` = all leads; `discovered` = leads with `discovery_status = DISCOVERED`; `researched` = `research_status` RESEARCHED or NEEDS_REVIEW; `needs_review` = stage Needs Review; `send_failures` = Send_Log `failed` rows.
   - `qualified` = Qualified or any later stage.
   - `qualification_rate` = qualified ÷ researched.
   - `emails_sent` = live sends only.
@@ -173,8 +179,12 @@ In `Leads`, after reading the draft: set `approval_status = Approved`, `approved
 
 | Column | Values | Set by |
 |---|---|---|
-| `stage` | New Lead, Researched, Qualified, Disqualified, Draft Ready, Approved, Contacted, Replied, Meeting Opportunity, Proposal Sent, Won, Lost, Unsubscribed | workflows and you |
+| `stage` | New Lead, Researched, Needs Review, Qualified, Disqualified, Draft Ready, Approved, Contacted, Replied, Meeting Opportunity, Proposal Sent, Won, Lost, Unsubscribed | workflows and you |
 | `approval_status` | Pending (WF03), Approved / Rejected / Needs Edit (you) | |
 | `send_status` | Sending, Sent, Failed (architecture §3.3), **TestSent** (added: a test-mode send, never picked again) | WF04 |
 | `draft_check_result` | `PASS` or `FAIL: reasons` | WF03, WF04 notes |
 | `reply_status` / `reply_category` | see WF05 | WF05 and you |
+| `discovery_status` | IMPORTED, DISCOVERED | WF01, WF02 |
+| `research_status` | PENDING, RESEARCHED, NEEDS_REVIEW, RETRY, SKIPPED | WF02 |
+| `evidence_quality` | NONE, WEAK, MODERATE, STRONG | WF02 |
+| `contact_readiness` | READY, READY_SHARED_MAILBOX, NO_PUBLISHED_EMAIL | WF02 |

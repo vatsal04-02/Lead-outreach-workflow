@@ -11,7 +11,7 @@
 3. **Fail closed.** If a check can't be completed (a missing setting, an unreadable suppression list, an AI error), nothing is sent.
 4. **One email per workflow run.** Sending is slow and deliberate, so a bug can't trigger a burst of mail.
 5. **No inbound internet exposure.** The local n8n instance is never published through a tunnel. Every workflow polls; there are no public webhooks.
-6. **₹0 tooling.** We use n8n Community Edition (already installed), Google Sheets, Gmail OAuth2, the free Companies House API, and a free-tier LLM.
+6. **₹0 tooling.** We use n8n Community Edition (already installed), Google Sheets, Gmail OAuth2, OpenStreetMap data through the free Overpass API, and a free-tier LLM. No company registry.
 
 ---
 
@@ -19,9 +19,9 @@
 
 ```
  Manual research / CSV ──► [WF01 Import & Dedupe] ──► Leads (New Lead)
+ OpenStreetMap (Overpass) ─► [WF02 discovery] ───────► Leads (New Lead, DISCOVERED) + Discovery_Log
                                                          │
-                         Companies House API (free) ─┐   ▼
-           Prospect website (public pages only) ─────┴► [WF02 Research & Qualify] ──► Researched ──► Qualified / Disqualified
+ robots.txt + prospect website (≤3 public pages) + Gemini ► [WF02 research & qualify] ──► Qualified / Needs Review / Disqualified
                                                          │
                          Niche template + research ─────►[WF03 Draft]──► Draft Ready
                                                          │
@@ -61,9 +61,12 @@
 | `PRIVACY_URL`, `WEBSITE_URL` | — | Shown in the email footer. |
 | `BUSINESS_LEGAL_NAME` | — | *(Added in Phase 4.)* FlowHQ's registered legal name. Required in every email footer by compliance rule 4. WF03 and WF04 refuse to work while it is blank. |
 | `LIVE_RECIPIENT_ALLOWLIST` | *(blank)* | *(Added in Phase 7.)* Optional. When it isn't blank, **live** sends go only to these comma-separated addresses, so the end-to-end test can use real FlowHQ-owned mailboxes without any risk of reaching a prospect. Clear it as part of go-live. |
+| `DISCOVERY_ENABLED` | `FALSE` | *(Added with discovery.)* WF02 discovers new businesses only when exactly `TRUE`. |
+| `DISCOVERY_QUERIES_PER_RUN` | `2` | Searches (region × industry) per WF02 run, 1–10. |
+| `DISCOVERY_REFRESH_DAYS` | `30` | A completed search is repeated only after this many days; failed searches are retried on the next run. |
 
-### 3.2 `Niches` tab
-One row per niche. The fields are listed in `01-strategy-icp-offer.md` §8.
+### 3.2 `Niches` tab (campaign targeting)
+One row per **campaign**. The fields are listed in `01-strategy-icp-offer.md` §8. Targeting (country, regions, industries or `all`, size criteria, minimum score, required evidence, outreach language, discovery volume) lives here, not in workflow code. Only the campaign named in `Settings.ACTIVE_NICHE` is processed; run one campaign per country and time zone, and switch `ACTIVE_NICHE` to change campaigns.
 
 ### 3.3 `Leads` tab (one row per business)
 
@@ -72,12 +75,12 @@ One row per niche. The fields are listed in `01-strategy-icp-offer.md` §8.
 | `lead_id` | WF01 | The normalised registrable domain, e.g. `smithlettings.co.uk`. **This is the dedupe key.** |
 | `niche_id`, `country` | WF01 | |
 | `company_name`, `website`, `city`, `region` | Import | |
-| `contact_name`, `contact_role` | Import / WF02 | Only if publicly stated by the company or on Companies House. |
+| `contact_name`, `contact_role` | Import / WF02 | Only if publicly stated by the business on its own website (or in the imported source). |
 | `contact_email` | Import | Must be copied from a public page. **Never guessed or pattern-generated.** |
 | `email_source_url` | Import | The exact page where the email address was found. Required. |
 | `phone` | Import | Optional. |
 | `discovery_source`, `discovery_source_url`, `discovered_at` | Import / WF01 | |
-| `company_number`, `company_status`, `legal_entity_type` | WF02 | From the Companies House API (UK). |
+| `company_number`, `legal_entity_type` | WF02 / import | As **stated on the business's own website** (e.g. a footer "Company No." or "Ltd"), observed and **unverified**. No registry is queried. `legal_entity_type` is used for the UK PECR review rule (§5). |
 | `stage` | Workflows / human | See §4. |
 | `fit_score`, `problem_score`, `contact_score`, `channel_score` | WF02 | Each 0–3 (see §5). |
 | `total_score`, `score_override` | WF02 / human | The override wins if it's filled in. |
@@ -93,23 +96,18 @@ One row per niche. The fields are listed in `01-strategy-icp-offer.md` §8.
 | `reply_status`, `reply_received_at`, `reply_category` | WF05 / human | |
 | `next_action`, `next_action_due`, `notes` | Human | |
 | `last_updated`, `last_error` | All | |
-| `registry_country` | WF02 | *(Added for multi-country registry checks.)* The ISO code used for routing (`GB`, `US`, `IN`, …), taken from the lead's `country` (`UK` → `GB`). |
-| `registry_provider` | WF02 | The adapter used: `companies_house`, `us_state_registry`, `mca_india`, `manual`, or `none`. |
-| `registry_status` | WF02 / human | `VERIFIED`, `INELIGIBLE` (the registry record found by company number says it isn't active or isn't an eligible type), `UNVERIFIED` (unsupported country, adapter not live, API failure, no match, ambiguous match or insufficient evidence; **never** read as "doesn't exist"), or `MANUAL_VERIFIED` (set by a human). |
-| `registry_source_url` | WF02 / human | The official page for the record or search. |
-| `registry_checked_at` | WF02 | When the lookup was evaluated. |
-| `registry_match_rationale` | WF02 / human | How the record was matched, or why it couldn't be. |
+| `business_category` | WF02 discovery / AI | From the OpenStreetMap category tag (observed) or the AI's reading of the pages (inferred). |
+| `services_summary` | WF02 (AI) | One sentence, prefixed `(inferred)`. |
+| `discovery_status` | WF01 / WF02 | `IMPORTED` or `DISCOVERED`. |
+| `research_status` | WF02 | `PENDING`, `RESEARCHED`, `NEEDS_REVIEW`, `RETRY` (website or AI failure; retried later, after fresh leads), `SKIPPED` (suppressed). |
+| `researched_at` | WF02 | When research last ran. |
+| `evidence_quality` | WF02 | `NONE`, `WEAK`, `MODERATE`, `STRONG` (computed by code from verified excerpts and page credibility). |
+| `opportunities` | WF02 | JSON list of verified opportunities: `opportunity_type`, `observed_excerpt` (verbatim), `source_url`, `observed_fact`, `inferred_opportunity`, `why_relevant`, `confidence`, `uncertainty`. |
+| `contact_readiness` | WF02 | `READY` (business email published on its own site), `READY_SHARED_MAILBOX`, `NO_PUBLISHED_EMAIL`. |
 
-**Registry verification is separate from website evidence.** `evidence` holds only verbatim website quotes; `registry_*` and `company_*` hold only official-registry results. The router (`src/lib/registries.js`) picks an adapter by country:
+**Observed facts vs inferences.** `evidence` and each opportunity's `observed_excerpt` are verbatim text found on the cited page (checked by code). `observed_fact`, `inferred_opportunity`, `why_relevant`, `services_summary`, `opportunity_hypothesis` and the AI part of `qualification_reasoning` are model inferences and are labelled as such. Contact emails are never taken from the AI or from OpenStreetMap; only from the business's own pages, on its own domain (or a shared mailbox it publishes there).
 
-| Country | Provider | Live? |
-|---|---|---|
-| GB | Companies House public data API | **Yes** (needs a free API key). Stubbed in tests; not yet run against the real API. |
-| US | Per-state registries | **No.** Designed only. No official source or credentials are confirmed, so the result is always `UNVERIFIED`. |
-| IN | Ministry of Corporate Affairs (MCA) | **No.** Designed only. No official access or credentials are confirmed, so the result is always `UNVERIFIED`. |
-| any other | — | No adapter, so the result is `UNVERIFIED`. |
-
-When the active niche's `legal_entity_required` isn't blank or `none`, a lead qualifies only with `VERIFIED` or `MANUAL_VERIFIED`; `UNVERIFIED` sends it to `Researched` for a manual check. `INELIGIBLE` always disqualifies. A human records a manual check by setting `registry_status = MANUAL_VERIFIED` together with an http(s) `registry_source_url` and a `registry_match_rationale`; WF02 then keeps those values.
+**No company-registry checks.** Earlier versions verified UK companies on Companies House and designed US/India registry adapters. These were removed: qualification uses public business evidence only, and no registry API key is needed.
 
 ### 3.4 `Suppression` tab
 `email`, `domain`, `reason` (`unsubscribe` / `bounce` / `complaint` / `manual` / `no_solicitation_notice`), `source`, `added_at`.
@@ -120,6 +118,7 @@ Suppression applies at **both email and domain level** for initial outreach. Ent
 - `Send_Log`: an append-only record of every send attempt (`lead_id`, `to_email`, `subject`, `attempted_at`, `status`, `gmail_message_id`, `gmail_thread_id`, `test_mode`, `error`).
 - `Errors`: `timestamp`, `workflow`, `node`, `lead_id`, `message`.
 - `Metrics`: one row per day (see §8).
+- `Discovery_Log`: one row per discovery search (`query_key, niche_id, provider, country, region, category, run_at, status, results, new_leads, duplicates, skipped, error`); WF02 uses it to rotate searches.
 
 ### 3.6 `Import` tab (input for WF01)
 The human-filled Leads columns, in this order: `company_name`, `website`, `city`, `region`, `contact_name`, `contact_role`, `contact_email`, `email_source_url`, `phone`, `discovery_source`, `discovery_source_url`, `discovered_at`, `notes`. These are followed by four status columns that WF01 writes back: `import_status` (`IMPORTED` / `REJECTED_INVALID` / `REJECTED_DUPLICATE` / `REJECTED_SUPPRESSED`), `import_message`, `lead_id`, `processed_at`.
@@ -132,13 +131,14 @@ The canonical column lists for every tab live in `src/schema.js`. `npm test` fai
 
 ## 4. Stages
 
-The brief's stage list, plus **one addition: `Disqualified`**. Without it, prospects that don't fit would sit in "Researched" indefinitely. Please confirm this addition.
+The brief's stage list, plus two additions: `Disqualified` and `Needs Review`. The requested statuses map onto them: NEW → New Lead, RESEARCHED/QUALIFIED/DISQUALIFIED → the same names, NEEDS_REVIEW → Needs Review, SUPPRESSED → Disqualified with `disqualify_reason = Suppressed: …` (and Unsubscribed for opt-outs). `research_status` tracks the research step separately.
 
 | Stage | Set by | Rule |
 |---|---|---|
-| New Lead | WF01 | Imported, deduplicated, not suppressed |
-| Researched | WF02 | Website fetched and analysed, but Companies House couldn't be matched automatically, so a human must check it. (Fetch and AI failures leave the stage unchanged and set `last_error`.) |
-| Qualified | WF02 | `total_score ≥ MIN_QUALIFY_SCORE` and all hard gates pass |
+| New Lead | WF01 / WF02 discovery | Imported or discovered, deduplicated, not suppressed |
+| Researched | human | Optional manual marker; WF02 no longer sets it. (Fetch and AI failures leave the stage unchanged with `research_status = RETRY`.) |
+| **Needs Review** *(new)* | WF02 | Evidence is missing or weak, no published email, possible prompt injection, a profile page instead of a website, robots.txt disallows, or the UK legal-form rule. A human decides. |
+| Qualified | WF02 | `total_score ≥` the campaign minimum, required evidence present, evidence quality at least MODERATE, and all hard gates pass |
 | **Disqualified** *(new)* | WF02 / human | A hard gate failed or the score is below the threshold. Reason recorded. |
 | Draft Ready | WF03 | Draft generated **and** passed automated checks |
 | Approved | Human | `approval_status = Approved` |
@@ -153,25 +153,28 @@ The brief's stage list, plus **one addition: `Disqualified`**. Without it, prosp
 
 ## 5. Qualification scoring (WF02)
 
-The LLM proposes a score for each dimension from 0 to 3, and it must cite evidence for each one. A Code node computes the total, so the AI never does the arithmetic.
+Industry- and country-independent. The model proposes values; code verifies and caps them, and computes the total, so the AI never does the arithmetic.
 
-| Dimension | Weight | 0 | 1 | 2 | 3 |
-|---|---|---|---|---|---|
-| **Fit** with FlowHQ services | 30 | Not in niche | In niche, but outside the size or type range | In niche, size unclear | In niche, independent, 1–3 branches |
-| **Problem evidence** | 30 | None found | General inference only | One public signal **with quote + URL** | Two or more signals with quotes + URLs |
-| **Contact relevance** | 20 | No contact | Generic inbox only | A named role on the team page | A named decision-maker with a published email |
-| **Channel legitimacy** | 20 | No published email | — | Published role email | Published personal business email |
+| Dimension | Weight | How it is set |
+|---|---|---|
+| **Fit** (`fit_score`) | 30 | Model's relevance to the campaign target (0–3), capped at 1 when the lead's known city/region is outside the campaign regions. |
+| **Opportunity evidence** (`problem_score`) | 30 | Code: 0 with no verified opportunity; 1 = one low-confidence; 2 = one medium/high, or two; 3 = two or more with at least one medium/high. An opportunity counts only if its excerpt appears **verbatim** on the cited page. |
+| **Contact relevance** (`contact_score`) | 20 | Model 0–3, capped by code: 1 without a verified named person; 2 when the address is a role mailbox. |
+| **Channel** (`channel_score`) | 20 | Code: 0 no published email; 2 role or shared mailbox; 3 a personal address on the business's own domain. |
 
-`total_score = Σ (score / 3 × weight)` → 0–100.
+`total_score = Σ (score / 3 × weight)` → 0–100. `score_override` replaces it when filled in. The minimum is the campaign's `min_qualify_score`, or `Settings.MIN_QUALIFY_SCORE`.
 
-**Hard gates** (any one failing means Disqualified, whatever the score):
-- `channel_score = 0`.
-- UK: the business isn't an **active** limited company or LLP on Companies House.
-- The website contains a "no unsolicited sales contact" statement.
-- The domain or email is in Suppression.
-- Any niche exclusion applies.
+**Hard gates → Disqualified:** a no-solicitation notice (deterministic or verified quote); a verified campaign exclusion; the email or domain is suppressed.
 
-A problem-evidence score above 1 without a quote and URL is **automatically capped at 1** by the Code node.
+**→ Needs Review (never a fabricated score):**
+- a required evidence item is missing (`required_evidence`: `website`, `published_email`, `verified_opportunity`, `two_facts`);
+- evidence quality is `NONE` or `WEAK`;
+- suspected prompt injection on a page;
+- a profile/directory page instead of a website;
+- robots.txt disallows the site;
+- **UK campaigns:** the website doesn't state a Ltd/LLP/plc legal form. Under PECR, sole traders and partnerships need prior consent, so a human checks.
+
+A high score is not evidence of buying intent, and nothing in the system records buying intent.
 
 ---
 
@@ -181,8 +184,8 @@ A problem-evidence score above 1 without a quote and URL is **automatically capp
 |---|---|---|---|---|
 | WF00 | Error Handler | 2 | Error Trigger | Writes to `Errors` and emails FlowHQ. Every other workflow points to it. The alert address lives in WF00's own Config node, so alerts still work when Sheets is what failed. n8n only calls error workflows for production (scheduled or triggered) runs. Failures in manual runs show in the editor instead. |
 | WF01 | Import & Dedupe | 2 | Manual (reads an `Import` tab) | Normalises the domain and email. Rejects duplicates, suppressed entries, and rows without `email_source_url`. |
-| WF02 | Research & Qualify | 3 | Manual at first, scheduled later | Fetches the homepage plus at most 2 pages (contact, about/team) and strips HTML. Uses a low, identifiable request rate. JSON output is schema-validated, and invalid output changes **no** data. |
-| WF03 | Draft Generation | 4 | Manual | Per-niche template. Checks reject drafts with unresolved `{placeholders}`, numbers or percentages not present in the evidence, banned phrases ("case study", "our clients", "guarantee", …), more than ~120 words, or a missing footer. |
+| WF02 | Discovery, Research & Qualify | 3 | Manual | Optional OpenStreetMap discovery (rotating, logged searches). Research respects robots.txt and fetches the homepage plus at most 2 pages, with a low, identifiable request rate. JSON output is schema-validated; invalid output changes no AI-derived data. Never sends email. |
+| WF03 | Draft Generation | 4 | Manual | Per-campaign template (`general-automation-v1` is industry-independent and built around the lead's verified opportunity). Checks reject drafts with unresolved `{placeholders}`, numbers or percentages not present in the evidence, banned phrases ("case study", "our clients", "guarantee", …), more than ~120 words, or a missing footer. |
 | WF04 | Approved Sender | 5 | Schedule, every 10 minutes | See §7. |
 | WF05 | Replies & Bounces | 6 | Schedule, every 15 minutes | Matches Gmail `threadId` against `Send_Log`. **Opt-out detection is keyword-based (no AI)** and suppresses immediately. Bounces from `mailer-daemon` are suppressed. Other replies are marked `Replied` for a human to read. |
 | WF06 | Daily Metrics | 6 | Schedule, daily | Counts by stage and writes a row to `Metrics`. |
@@ -193,7 +196,7 @@ Exported workflow JSON goes in `workflows/` in this repo. The exports contain cr
 
 ## 7. Sending safety (WF04), in execution order
 
-1. Read `Settings`. If it can't be read, or `SENDING_ENABLED ≠ TRUE`, **stop**.
+1. Read `Settings`. If it can't be read, or `SENDING_ENABLED ≠ TRUE`, **stop**. In live mode, also stop unless the campaign's `outreach_basis_reviewed` is exactly `TRUE`.
 2. Check that now is inside `SEND_DAYS` and `SEND_WINDOW_*` in the niche's time zone (using Luxon, which is built into n8n).
 3. Count today's `Sent` rows in `Send_Log`. If the count is `≥ DAILY_SEND_LIMIT`, stop. If the last send was less than `MIN_MINUTES_BETWEEN_SENDS` ago, stop.
 4. Pick **one** lead where `stage = Approved`, `approval_status = Approved`, and `send_status` is empty.
@@ -222,7 +225,7 @@ Exported workflow JSON goes in `workflows/` in this repo. The exports contain cr
 
 ## 8. Metrics (focused on outcomes, not volume)
 
-New leads, qualified, qualification rate, drafts approved / rejected, **emails sent**, bounces (with rate), unsubscribes, **replies**, **positive replies**, **meetings booked**, **proposals sent**, **clients won**, and won value. The headline numbers are **positive replies, meetings, and clients**.
+New leads, discovered, researched, needs review, qualified, qualification rate, drafts approved / rejected, **emails sent**, bounces (with rate), unsubscribes, send failures, **replies**, **positive replies**, **meetings booked**, **proposals sent**, **clients won**, and won value. The headline numbers are **positive replies, meetings, and clients**.
 
 As implemented, WF06 writes one row per day of **cumulative totals**; the daily change is the difference between two rows. Exact definitions are in `08-workflows.md` (WF06). `won_value` stays blank until Leads has a deal-value column.
 
@@ -231,7 +234,9 @@ As implemented, WF06 writes one row per day of **cumulative totals**; the daily 
 ## 9. AI model usage
 
 - **Default: Google Gemini API free tier** through n8n's built-in Gemini nodes, or an HTTP Request. Free-tier limits and terms change, so **check the current limits and data-use terms when we reach Phase 3.** Free tiers may use inputs to improve the provider's products.
-- **Only public website text and our own prompts are sent to the AI.** Reply emails (private correspondence) are **not** sent to a free-tier AI. In the MVP, replies are handled with keyword rules plus a human.
+- **Only public website text and our own prompts are sent to the AI**, with email addresses and phone numbers redacted first. Reply emails (private correspondence) are **not** sent to any AI; replies are handled with keyword rules plus a human.
+- The model, endpoint (`gemini_model`, `ai_endpoint`) and key (n8n credential) are configurable. A failed call or invalid JSON keeps the lead and its evidence, sets `research_status = RETRY` with `last_error`, and is retried on a later run.
+- **Prompt injection:** page text is fenced and labelled as untrusted data; the model can't fetch URLs, choose contacts, or bypass gates; quotes that look like instructions are rejected; and a page containing injection-like text forces `Needs Review`.
 - **Alternative:** Ollama running locally (free, and no data leaves the laptop). It needs enough RAM, and drafts from small models are usually weaker. This is an option if the free tiers become unsuitable.
 - AI output is always: structured JSON, schema-validated, and reviewed by a human before anything is sent.
 
@@ -259,7 +264,7 @@ As implemented, WF06 writes one row per day of **cumulative totals**; the daily 
 
 ## 12. Deliberately out of scope for the MVP
 
-- Automated discovery or scraping (Google Maps, portals, LinkedIn). Manual import comes first, and scraping those sites conflicts with their terms.
+- Scraping Google Maps, portals, LinkedIn or other sites whose terms forbid it. Discovery uses OpenStreetMap open data only; manual import stays available.
 - **Automated follow-ups.** These come only after the initial flow has been reliable for at least 2 weeks.
 - Open and click tracking (pixels or link rewriting). It has privacy, deliverability, and complexity costs.
 - Multiple sending mailboxes, a CRM, and paid tools.

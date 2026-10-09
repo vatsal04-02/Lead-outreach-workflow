@@ -1,10 +1,10 @@
 # Niche smoke test: UK independent estate and letting agencies
 
-**Status: NOT RUN. Zero of 20 agencies verified.** Re-checked on 2026-10-09: page fetching is still blocked in the build environment (`ENOTFOUND` for Companies House), so all 22 candidates remain `UNVERIFIED`. The smoke test has **not** passed or failed. No prospect in this repository has verified company status, a verified email address, or a verified observation.
+**Status: NOT RUN. Zero of 20 agencies verified.** Re-checked on 2026-10-09: page fetching is still blocked in the build environment (`ENOTFOUND` for every site tried), so all 22 candidates remain `UNVERIFIED`. The smoke test has **not** passed or failed. No prospect in this repository has a verified legal form, a verified email address, or a verified observation.
 
 ## 1. Why I couldn't verify prospects
 
-In this cloud session, every web page fetch failed with `ENOTFOUND`. That included Companies House (`find-and-update.company-information.service.gov.uk`), agency websites, Zoopla, Propertymark and gov.uk, because the environment's network policy blocks those hosts. Only a web *search* tool worked, and it returns summaries of search results, not the pages themselves. A search summary isn't acceptable evidence of company status, a published email address, or an operational observation, so I didn't record any of those from it.
+In this cloud session, every web page fetch failed with `ENOTFOUND`. That included a public company register, agency websites, Zoopla, Propertymark and gov.uk, because the environment's network policy blocks those hosts. Only a web *search* tool worked, and it returns summaries of search results, not the pages themselves. A search summary isn't acceptable evidence of legal form, a published email address, or an operational observation, so I didn't record any of those from it.
 
 You can allow these hosts in the environment's network settings (session title bar → environment → Edit → Network access). Then I can do the verification in a later session. Otherwise, use the manual process below. It takes about 60–75 minutes.
 
@@ -21,7 +21,7 @@ Treat the candidate names as leads to check, not facts. Directory listings go ou
 
 | Column | What it means | What counts | What does **not** count |
 |---|---|---|---|
-| `evidence_exists` | The business is real and in the ICP. | A Companies House page showing **Active**, plus the company type, plus a live agency website | A directory listing alone |
+| `evidence_exists` | The business is real and in the ICP. | A live agency website that states its legal form ("Ltd", "LLP" or a company number) and shows it trading | A directory listing alone |
 | `evidence_opportunity` | Something public suggests a workflow FlowHQ could improve. | An exact quote and URL from the agency's own site, e.g. opening hours that close evenings and Sundays, "we aim to respond within 24 hours", "call to book a viewing", or one inbox shared across branches | Your guess that "they probably miss leads" |
 | `evidence_buying_intent` | They're actively looking for a solution like this. | A job ad for a CRM/automation administrator, a public request for recommendations, a tender | Pain signals. These are an *opportunity*, not intent. **Expect "none" for almost every agency, and write "none".** |
 
@@ -30,13 +30,13 @@ Treat the candidate names as leads to check, not facts. Directory listings go ou
 Work through `smoke-test-candidates.csv` (or your own finds), filling the template columns:
 
 1. **Website.** Search for the agency's name and town. Confirm the site is the agency's own: the address and phone should match its portal listing. Fill in `website` and `discovery_source_url` (the page where you found the agency).
-2. **Company status.** Look in the website footer or terms page for "Registered in England & Wales No. ########". Search that number, or the name, on [Companies House](https://find-and-update.company-information.service.gov.uk/). Record:
-   - `ch_company_name` and `ch_company_number`
-   - `ch_company_type` (it must be *Private limited company* or *Limited liability partnership*)
-   - `ch_status` (it must be *Active*)
-   - `ch_source_url` (the company's Companies House page)
+2. **Legal form.** Look in the website footer, terms or privacy page for the legal name and form, e.g. "Example Lettings Ltd, registered in England & Wales No. ########". Record:
+   - `stated_legal_name` and `stated_company_number` (exactly as written; blank if not stated)
+   - `stated_legal_form` (`Ltd`, `LLP`, `plc`, or blank)
+   - `legal_form_source_url` (the page that states it)
+   - `manual_register_check` (optional): if you choose to look the company up on a public register by hand, note what you saw and when. The system never does this and doesn't need it.
 
-   If you can't match a company, record `EXCLUDED`, because it may be a sole trader or partnership (PECR, see `03-compliance-guardrails.md`).
+   If the site states no corporate form, record `EXCLUDED`, or mark it for a human decision, because it may be a sole trader or partnership (PECR, see `03-compliance-guardrails.md`). WF02 applies the same rule: such UK leads go to `Needs Review`.
 3. **Size.** Count the branches on the site. More than 3, or a national chain or franchise, means `EXCLUDED`.
 4. **Email.** Copy the address **exactly** as shown on the agency's own contact page or footer, and fill in `email_source_url`. If there's only a contact form, leave `public_email` blank. **Never** guess a pattern like `info@`.
 5. **No-solicitation check.** If the site says something like "no unsolicited sales contact", set `no_solicitation_notice = Y` and record `EXCLUDED`.
@@ -45,8 +45,8 @@ Work through `smoke-test-candidates.csv` (or your own finds), filling the templa
    - `meets_email_and_ltd` = `Y` only if steps 2 and 4 are both satisfied.
    - `has_citable_signal` = `Y` only if step 6 has a quote and a URL.
    - `confidence`:
-     - **High**: the Companies House record is matched by company number, the email is on the agency's own site, and there's a quoted signal.
-     - **Medium**: the Companies House record is matched by name and address only, or the signal is weak (opening hours alone).
+     - **High**: the website states the legal form and company number, the email is on the agency's own site, and there's a quoted signal.
+     - **Medium**: the website states the legal form but no company number, or the signal is weak (opening hours alone).
      - **Low**: anything else.
    - `outcome`: `PASS` (meets email + limited company), `PASS+SIGNAL` (also has a citable signal), `EXCLUDED` (give a reason), or `UNVERIFIED`.
 
@@ -74,11 +74,11 @@ Copy only `PASS` and `PASS+SIGNAL` rows into the Sheet's **Import** tab:
 | `discovery_source_url` | `discovery_source_url` |
 | `researched_at` | `discovered_at` |
 | (type `smoke-test`) | `discovery_source` |
-| Companies House number + observation quote | `notes` |
+| stated legal form and number + observation quote and URL | `notes` |
 
-The Companies House fields (`company_number`, `company_status`, `legal_entity_type`) are filled by WF02 (Phase 3) via the official API, per the architecture. For now, keep them in the research sheet.
+The Import tab has no legal-form columns. WF02 fills the Leads `company_number` and `legal_entity_type` when a researched page states them; both are always treated as unverified statements.
 
 ## 7. Using the pipeline once candidates are verified
 
-After you've found an agency's own website and **published** email by hand (steps 1 and 4 above), you can import it with WF01. WF02 then repeats the Companies House check through the official API and captures quoted evidence automatically. It never invents a company status, an email or a quote: any quote the AI returns is discarded unless it appears verbatim on the cited page. That makes WF02 a second check on your manual research, **not** a replacement for it. Evidence of *buying intent* is never inferred by any workflow.
+After you've found an agency's own website and **published** email by hand (steps 1 and 4 above), you can import it with WF01. WF02 then reads the agency's own pages (honouring robots.txt) and captures quoted evidence automatically. No company registry is queried. It never invents a legal form, an email or a quote: any quote the AI returns is discarded unless it appears verbatim on the cited page. That makes WF02 a second check on your manual research, **not** a replacement for it. Evidence of *buying intent* is never inferred by any workflow.
 
