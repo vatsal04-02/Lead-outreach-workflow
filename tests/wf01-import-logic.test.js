@@ -15,7 +15,8 @@ const { TABS } = require('../src/schema');
 
 const NOW = '2026-10-09T10:00:00.000Z';
 
-// Fictional test data only (example.* / .test-style domains), never real prospects.
+// Synthetic test data only: every address uses the reserved .example TLD. The
+// .co.uk strings further down are parsing-only checks of the public-suffix logic.
 function settingsRows(overrides = {}) {
   const values = { ACTIVE_NICHE: 'uk-estate-letting', SENDING_ENABLED: 'FALSE', ...overrides };
   return Object.entries(values).map(([key, value], i) => ({ row_number: i + 2, key, value, notes: '' }));
@@ -30,16 +31,16 @@ function importRow(overrides = {}) {
   return {
     row_number: nextRow++,
     company_name: 'Example Lettings Ltd',
-    website: 'https://www.example-lettings.co.uk',
+    website: 'https://www.example-lettings.example',
     city: 'Reading',
     region: 'Berkshire',
     contact_name: '',
     contact_role: '',
-    contact_email: 'info@example-lettings.co.uk',
-    email_source_url: 'https://www.example-lettings.co.uk/contact',
+    contact_email: 'info@example-lettings.example',
+    email_source_url: 'https://www.example-lettings.example/contact',
     phone: '',
     discovery_source: 'manual',
-    discovery_source_url: 'https://www.example-lettings.co.uk/',
+    discovery_source_url: 'https://www.example-lettings.example/',
     discovered_at: '2026-10-08',
     notes: '',
     import_status: '',
@@ -68,14 +69,14 @@ function statusOf(result, rowNumber) {
 // ---------- happy path ----------
 
 test('valid row becomes a New Lead with normalised fields', () => {
-  const row = importRow({ contact_email: ' MAILTO:Info@Example-Lettings.co.uk ', website: 'www.example-lettings.co.uk/' });
+  const row = importRow({ contact_email: ' MAILTO:Info@Example-Lettings.example ', website: 'www.example-lettings.example/' });
   const result = run({ importRows: [row] });
 
   assert.equal(result.leadsToAppend.length, 1);
   const lead = result.leadsToAppend[0];
-  assert.equal(lead.lead_id, 'example-lettings.co.uk');
-  assert.equal(lead.contact_email, 'info@example-lettings.co.uk');
-  assert.equal(lead.website, 'https://www.example-lettings.co.uk/');
+  assert.equal(lead.lead_id, 'example-lettings.example');
+  assert.equal(lead.contact_email, 'info@example-lettings.example');
+  assert.equal(lead.website, 'https://www.example-lettings.example/');
   assert.equal(lead.stage, 'New Lead');
   assert.equal(lead.niche_id, 'uk-estate-letting');
   assert.equal(lead.country, 'UK');
@@ -85,7 +86,7 @@ test('valid row becomes a New Lead with normalised fields', () => {
   const u = statusOf(result, row.row_number);
   assert.equal(u.import_status, IMPORT_STATUS.IMPORTED);
   assert.equal(u.import_message, 'OK');
-  assert.equal(u.lead_id, 'example-lettings.co.uk');
+  assert.equal(u.lead_id, 'example-lettings.example');
   assert.equal(u.processed_at, NOW);
 });
 
@@ -126,7 +127,7 @@ test('all missing required fields are reported together', () => {
 });
 
 test('email_source_url must be a full http(s) URL', () => {
-  for (const bad of ['example-lettings.co.uk/contact', 'ftp://example-lettings.co.uk/contact', 'see website']) {
+  for (const bad of ['example-lettings.example/contact', 'ftp://example-lettings.example/contact', 'see website']) {
     const row = importRow({ email_source_url: bad });
     const u = statusOf(run({ importRows: [row] }), row.row_number);
     assert.equal(u.import_status, IMPORT_STATUS.INVALID, bad);
@@ -151,9 +152,9 @@ test('unparseable discovered_at is rejected', () => {
 
 test('invalid email addresses are rejected', () => {
   const bad = [
-    'info', 'info@', '@example.co.uk', 'info@@example.co.uk', 'info@example', 'info@example..co.uk',
-    'in fo@example.co.uk', 'info@example.co.uk; sales@example.co.uk', 'info@example.co.uk,sales@example.co.uk',
-    '.info@example.co.uk', 'info.@example.co.uk', 'info@-example.co.uk', 'info@192.168.0.1', 'info@example.c0m',
+    'info', 'info@', '@agency.example', 'info@@agency.example', 'info@example', 'info@agency..example',
+    'in fo@agency.example', 'info@agency.example; sales@agency.example', 'info@agency.example,sales@agency.example',
+    '.info@agency.example', 'info.@agency.example', 'info@-agency.example', 'info@192.168.0.1', 'info@example.c0m',
   ];
   for (const email of bad) {
     const row = importRow({ contact_email: email });
@@ -163,7 +164,7 @@ test('invalid email addresses are rejected', () => {
 });
 
 test('valid email variants are accepted', () => {
-  for (const email of ['lettings@example.co.uk', 'first.last+web@example.co.uk', 'Sales@Branch.Example.co.uk']) {
+  for (const email of ['lettings@agency.example', 'first.last+web@agency.example', 'Sales@Branch.Agency.example']) {
     assert.ok(isValidEmail(normaliseEmail(email)), email);
   }
 });
@@ -171,25 +172,25 @@ test('valid email variants are accepted', () => {
 // ---------- duplicates ----------
 
 test('duplicate of an existing Leads row (same domain) is rejected', () => {
-  const leadsRows = [{ row_number: 2, lead_id: 'example-lettings.co.uk', contact_email: 'other@example-lettings.co.uk' }];
-  const row = importRow({ website: 'http://example-lettings.co.uk/about' });
+  const leadsRows = [{ row_number: 2, lead_id: 'example-lettings.example', contact_email: 'other@example-lettings.example' }];
+  const row = importRow({ website: 'http://example-lettings.example/about' });
   const u = statusOf(run({ importRows: [row], leadsRows }), row.row_number);
   assert.equal(u.import_status, IMPORT_STATUS.DUPLICATE);
   assert.match(u.import_message, /already exists in Leads/);
 });
 
 test('duplicate of an existing Leads email under a different website is rejected', () => {
-  const leadsRows = [{ row_number: 2, lead_id: 'old-site.co.uk', contact_email: 'INFO@example-lettings.co.uk' }];
+  const leadsRows = [{ row_number: 2, lead_id: 'old-site.example', contact_email: 'INFO@example-lettings.example' }];
   const row = importRow();
   const u = statusOf(run({ importRows: [row], leadsRows }), row.row_number);
   assert.equal(u.import_status, IMPORT_STATUS.DUPLICATE);
-  assert.match(u.import_message, /contact_email already belongs to lead old-site.co.uk/);
+  assert.match(u.import_message, /contact_email already belongs to lead old-site.example/);
 });
 
 test('duplicates within one import batch keep only the first row', () => {
   const first = importRow();
-  const sameSite = importRow({ website: 'https://branch.example-lettings.co.uk', contact_email: 'branch@example-lettings.co.uk' });
-  const sameEmail = importRow({ website: 'https://another-agency.co.uk', email_source_url: 'https://another-agency.co.uk/contact' });
+  const sameSite = importRow({ website: 'https://branch.example-lettings.example', contact_email: 'branch@example-lettings.example' });
+  const sameEmail = importRow({ website: 'https://another-agency.example', email_source_url: 'https://another-agency.example/contact' });
   const result = run({ importRows: [first, sameSite, sameEmail] });
 
   assert.equal(result.leadsToAppend.length, 1);
@@ -202,16 +203,16 @@ test('duplicates within one import batch keep only the first row', () => {
 
 test('suppressed email is rejected', () => {
   const row = importRow();
-  const suppressionRows = [{ email: 'Info@Example-Lettings.co.uk', domain: '', reason: 'unsubscribe' }];
+  const suppressionRows = [{ email: 'Info@Example-Lettings.example', domain: '', reason: 'unsubscribe' }];
   const u = statusOf(run({ importRows: [row], suppressionRows }), row.row_number);
   assert.equal(u.import_status, IMPORT_STATUS.SUPPRESSED);
   assert.match(u.import_message, /contact_email is on the Suppression list/);
 });
 
 test('suppressed domain blocks any address or subdomain of that agency', () => {
-  const suppressionRows = [{ email: '', domain: 'https://www.example-lettings.co.uk/', reason: 'manual' }];
-  const viaWebsite = importRow({ contact_email: 'info@example-lettings.co.uk' });
-  const viaSubdomain = importRow({ website: 'https://lettings.example-lettings.co.uk', contact_email: 'a@lettings.example-lettings.co.uk' });
+  const suppressionRows = [{ email: '', domain: 'https://www.example-lettings.example/', reason: 'manual' }];
+  const viaWebsite = importRow({ contact_email: 'info@example-lettings.example' });
+  const viaSubdomain = importRow({ website: 'https://lettings.example-lettings.example', contact_email: 'a@lettings.example-lettings.example' });
   const result = run({ importRows: [viaWebsite, viaSubdomain], suppressionRows });
   assert.equal(statusOf(result, viaWebsite.row_number).import_status, IMPORT_STATUS.SUPPRESSED);
   assert.equal(statusOf(result, viaSubdomain.row_number).import_status, IMPORT_STATUS.SUPPRESSED);
@@ -219,8 +220,8 @@ test('suppressed domain blocks any address or subdomain of that agency', () => {
 });
 
 test('a suppressed email also suppresses its company domain', () => {
-  const suppressionRows = [{ email: 'director@example-lettings.co.uk', domain: '', reason: 'unsubscribe' }];
-  const row = importRow({ contact_email: 'info@example-lettings.co.uk' });
+  const suppressionRows = [{ email: 'director@example-lettings.example', domain: '', reason: 'unsubscribe' }];
+  const row = importRow({ contact_email: 'info@example-lettings.example' });
   const u = statusOf(run({ importRows: [row], suppressionRows }), row.row_number);
   assert.equal(u.import_status, IMPORT_STATUS.SUPPRESSED);
   assert.match(u.import_message, /domain is on the Suppression list/);
@@ -239,8 +240,8 @@ test('suppressing a shared mail provider address does not block other users of t
 });
 
 test('suppression takes priority over duplicate detection', () => {
-  const leadsRows = [{ row_number: 2, lead_id: 'example-lettings.co.uk', contact_email: 'info@example-lettings.co.uk' }];
-  const suppressionRows = [{ email: 'info@example-lettings.co.uk', domain: '', reason: 'unsubscribe' }];
+  const leadsRows = [{ row_number: 2, lead_id: 'example-lettings.example', contact_email: 'info@example-lettings.example' }];
+  const suppressionRows = [{ email: 'info@example-lettings.example', domain: '', reason: 'unsubscribe' }];
   const row = importRow();
   assert.equal(statusOf(run({ importRows: [row], leadsRows, suppressionRows }), row.row_number).import_status, IMPORT_STATUS.SUPPRESSED);
 });
@@ -248,7 +249,7 @@ test('suppression takes priority over duplicate detection', () => {
 // ---------- repeat imports ----------
 
 test('rows that already have an import_status are skipped and not rewritten', () => {
-  const done = importRow({ import_status: 'IMPORTED', lead_id: 'example-lettings.co.uk' });
+  const done = importRow({ import_status: 'IMPORTED', lead_id: 'example-lettings.example' });
   const result = run({ importRows: [done] });
   assert.equal(result.leadsToAppend.length, 0);
   assert.equal(result.importUpdates.length, 0);
@@ -257,7 +258,7 @@ test('rows that already have an import_status are skipped and not rewritten', ()
 
 test('running the same import twice never creates a second lead', () => {
   // Simulate the sheet: run once, apply writes, run again on the resulting state.
-  const importRows = [importRow(), importRow({ website: 'https://second-agency.co.uk', contact_email: 'hello@second-agency.co.uk', email_source_url: 'https://second-agency.co.uk/contact-us' })];
+  const importRows = [importRow(), importRow({ website: 'https://second-agency.example', contact_email: 'hello@second-agency.example', email_source_url: 'https://second-agency.example/contact-us' })];
   const first = run({ importRows });
   assert.equal(first.leadsToAppend.length, 2);
 
@@ -307,7 +308,7 @@ test('row without row_number aborts rather than losing its status', () => {
 // ---------- warnings ----------
 
 test('warnings are recorded for mismatched email domain and off-site email source', () => {
-  const row = importRow({ contact_email: 'info@other-domain.co.uk', email_source_url: 'https://directory.example.org/agent/123', city: '' });
+  const row = importRow({ contact_email: 'info@other-domain.example', email_source_url: 'https://directory.example.org/agent/123', city: '' });
   const u = statusOf(run({ importRows: [row] }), row.row_number);
   assert.equal(u.import_status, IMPORT_STATUS.IMPORTED);
   assert.match(u.import_message, /differs from website domain/);
@@ -328,7 +329,7 @@ test('registrableDomain handles UK, AU and plain suffixes', () => {
 test('parseHost rejects unusable addresses', () => {
   assert.equal(parseHost('https://Example.co.uk:8443/x?y#z'), 'example.co.uk');
   assert.equal(parseHost('example.co.uk/contact'), 'example.co.uk');
-  for (const bad of ['', 'localhost', 'http://localhost:5678', 'javascript:alert(1)', 'mailto:a@b.com', 'http://1.2.3.4/', 'http://user@example.com']) {
+  for (const bad of ['', 'localhost', 'http://localhost:5678', 'javascript:alert(1)', 'mailto:a@b.example', 'http://1.2.3.4/', 'http://user@example.com']) {
     assert.equal(parseHost(bad), '', bad);
   }
   assert.equal(parseHost('example.co.uk', { requireScheme: true }), '');

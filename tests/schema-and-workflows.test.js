@@ -106,9 +106,17 @@ test('test fixtures only use the reserved .example TLD', () => {
 
 // ---------- workflow JSON ----------
 
+// Every workflow file in workflows/ is covered, including ones added later.
 const workflows = Object.fromEntries(
-  ['WF00-error-handler.json', 'WF00-selftest-trigger.json', 'WF01-import-dedupe.json'].map((f) => [f, JSON.parse(read(`workflows/${f}`))]),
+  fs.readdirSync(path.join(ROOT, 'workflows')).filter((f) => f.endsWith('.json')).sort().map((f) => [f, JSON.parse(read(`workflows/${f}`))]),
 );
+
+test('all eight expected workflow files exist', () => {
+  assert.deepEqual(Object.keys(workflows), [
+    'WF00-error-handler.json', 'WF00-selftest-trigger.json', 'WF01-import-dedupe.json', 'WF02-research-qualify.json',
+    'WF03-draft-generation.json', 'WF04-approved-sender.json', 'WF05-replies-bounces.json', 'WF06-daily-metrics.json',
+  ]);
+});
 
 test('workflow connections only reference existing nodes, and node names are unique', () => {
   for (const [file, wf] of Object.entries(workflows)) {
